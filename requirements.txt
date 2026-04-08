@@ -1,0 +1,8 @@
+django==5.2.13
+djangorestframework==3.17.1
+google-api-python-client==2.183.0
+google-auth==2.40.3
+google-auth-httplib2==0.2.0
+python-decouple==3.8
+pymysql==1.1.1
+requests==2.33.1

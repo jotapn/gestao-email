@@ -1,0 +1,369 @@
+{% extends "emails/base.html" %}
+
+{% block title %}E-mails{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
+    <div>
+        <h1 class="h3 mb-1">Contas de e-mail</h1>
+        <p class="text-muted mb-0">
+            Conta: <strong>{{ selected_account.user|default:"-" }}</strong>
+            <span class="mx-2">|</span>
+            Dominio: <strong>{{ domain|default:"nao configurado" }}</strong>
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'account-list' %}" class="btn btn-outline-secondary">Voltar para contas</a>
+        {% if selected_account %}
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createEmailModal">Criar novo e-mail</button>
+        {% endif %}
+    </div>
+</div>
+
+{% if error_message %}
+    <div class="alert alert-warning">Nao foi possivel carregar a lista do cPanel.</div>
+{% endif %}
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-lg-6">
+                <label for="q" class="form-label">Buscar e-mail</label>
+                <input type="text" id="q" name="q" value="{{ search_term }}" class="form-control" placeholder="ex: financeiro, contato@dominio.com">
+            </div>
+            <div class="col-lg-4">
+                <label for="status" class="form-label">Status</label>
+                <select id="status" name="status" class="form-select">
+                    <option value="" {% if not status_filter %}selected{% endif %}>Todos</option>
+                    <option value="active" {% if status_filter == "active" %}selected{% endif %}>Ativo</option>
+                    <option value="suspended" {% if status_filter == "suspended" %}selected{% endif %}>Suspenso</option>
+                </select>
+            </div>
+            <div class="col-lg-2 d-grid">
+                <button type="submit" class="btn btn-outline-primary">Aplicar</button>
+            </div>
+        </form>
+        <div class="mt-3 text-muted small">
+            {{ filtered_total }} e-mail{{ filtered_total|pluralize }} encontrado{{ filtered_total|pluralize }}
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="createEmailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5">Criar nova conta de e-mail</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <form method="post" action="{% url 'email-create' selected_account.user %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <input type="hidden" name="account" value="{{ selected_account.user|default:'' }}">
+                    <input type="hidden" name="domain" value="{{ domain }}">
+
+                    <div class="mb-3">
+                        <label for="{{ create_form.nome.id_for_label }}" class="form-label">{{ create_form.nome.label }}</label>
+                        <div class="input-group">
+                            {{ create_form.nome }}
+                            <span class="input-group-text">@{{ domain|default:"dominio" }}</span>
+                        </div>
+                        {% if create_form.nome.errors %}
+                            <div class="text-danger small mt-1">{{ create_form.nome.errors|join:", " }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ create_form.senha.id_for_label }}" class="form-label">{{ create_form.senha.label }}</label>
+                        <div class="input-group">
+                            {{ create_form.senha }}
+                            <button
+                                type="button"
+                                class="btn btn-outline-secondary"
+                                data-password-toggle
+                                data-target-id="{{ create_form.senha.id_for_label }}"
+                                aria-label="Mostrar ou ocultar senha"
+                            >
+                                <span data-eye-open aria-hidden="true">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                                        <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.12 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/>
+                                        <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5"/>
+                                    </svg>
+                                </span>
+                                <span data-eye-closed aria-hidden="true" class="d-none">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                                        <path d="M13.359 11.238 15.5 13.379l-.707.707-2.215-2.215a8.7 8.7 0 0 1-1.943.97A8.8 8.8 0 0 1 8 13.5C3 13.5 0 8 0 8a15.6 15.6 0 0 1 3.146-3.73L1.146 2.27l.708-.707 12.212 12.212zM11.297 9.176l-1.442-1.442a2 2 0 0 1-2.679-2.679L5.734 3.613A7.3 7.3 0 0 1 8 3.5c5 0 8 4.5 8 4.5a15.3 15.3 0 0 1-2.03 2.734z"/>
+                                        <path d="M10.477 7.649 8.35 5.523a2 2 0 0 0 2.127 2.126M4.121 5.027l1.747 1.747a2 2 0 0 0 3.105 2.51l1.19 1.19q-.545.174-1.163.176c-2.12 0-3.879-1.168-5.168-2.457A13 13 0 0 1 2.172 8c.286-.42 1.002-1.367 1.949-2.973"/>
+                                    </svg>
+                                </span>
+                            </button>
+                        </div>
+                        <ul class="list-unstyled mt-2 mb-0 small password-rules" data-password-rules data-target-id="{{ create_form.senha.id_for_label }}">
+                            <li data-rule="length" class="d-flex align-items-center gap-2 text-danger">
+                                <span data-icon aria-hidden="true">○</span>
+                                <span>Minimo de 8 caracteres</span>
+                            </li>
+                            <li data-rule="upper" class="d-flex align-items-center gap-2 text-danger">
+                                <span data-icon aria-hidden="true">○</span>
+                                <span>Letra maiuscula</span>
+                            </li>
+                            <li data-rule="lower" class="d-flex align-items-center gap-2 text-danger">
+                                <span data-icon aria-hidden="true">○</span>
+                                <span>Letra minuscula</span>
+                            </li>
+                            <li data-rule="number" class="d-flex align-items-center gap-2 text-danger">
+                                <span data-icon aria-hidden="true">○</span>
+                                <span>Numero</span>
+                            </li>
+                            <li data-rule="special" class="d-flex align-items-center gap-2 text-danger">
+                                <span data-icon aria-hidden="true">○</span>
+                                <span>Caractere especial</span>
+                            </li>
+                        </ul>
+                        {% if create_form.senha.errors %}
+                            <div class="text-danger small mt-1">{{ create_form.senha.errors|join:", " }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ create_form.quota.id_for_label }}" class="form-label">{{ create_form.quota.label }}</label>
+                        {{ create_form.quota }}
+                        {% if create_form.quota.help_text %}
+                            <div class="form-text">{{ create_form.quota.help_text }}</div>
+                        {% endif %}
+                        {% if create_form.quota.errors %}
+                            <div class="text-danger small mt-1">{{ create_form.quota.errors|join:", " }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Criar e-mail</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>E-mail</th>
+                        <th>Quota usada / total</th>
+                        <th>Status</th>
+                        <th class="text-end">Acoes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in emails %}
+                        <tr>
+                            <td class="fw-semibold">{{ item.full_email }}</td>
+                            <td>{{ item.diskused|default:"0" }} / {{ item.diskquota|default:"0" }} MB</td>
+                            <td>
+                                {% if item.is_suspended %}
+                                    <span class="badge text-bg-danger">Suspenso</span>
+                                {% else %}
+                                    <span class="badge text-bg-success">Ativo</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <div class="d-flex flex-wrap justify-content-end gap-2">
+                                    <form method="post" action="{% url 'email-action' selected_account.user item.full_email %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="account" value="{{ selected_account.user|default:'' }}">
+                                        <input type="hidden" name="domain" value="{{ domain }}">
+                                        {% if item.login_suspended or item.outgoing_suspended or item.incoming_suspended %}
+                                            <input type="hidden" name="action" value="unsuspend_user">
+                                            <button type="submit" class="btn btn-sm btn-outline-success">Reativar usuario</button>
+                                        {% else %}
+                                            <input type="hidden" name="action" value="suspend_user">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Suspender usuario</button>
+                                        {% endif %}
+                                    </form>
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-primary"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#passwordModal{{ forloop.counter }}"
+                                    >
+                                        Alterar senha
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-dark"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#deleteModal{{ forloop.counter }}"
+                                    >
+                                        Excluir
+                                    </button>
+                                </div>
+
+                                <div class="modal fade" id="deleteModal{{ forloop.counter }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h2 class="modal-title fs-5">Confirmar exclusao</h2>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                            </div>
+                                            <div class="modal-body text-start">
+                                                Deseja realmente excluir <strong>{{ item.full_email }}</strong>?
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                                                <form method="post" action="{% url 'email-action' selected_account.user item.full_email %}">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="account" value="{{ selected_account.user|default:'' }}">
+                                                    <input type="hidden" name="domain" value="{{ domain }}">
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <button type="submit" class="btn btn-danger">Excluir</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="modal fade" id="passwordModal{{ forloop.counter }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h2 class="modal-title fs-5">Alterar senha</h2>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                            </div>
+                                            <form method="post" action="{% url 'email-action' selected_account.user item.full_email %}">
+                                                {% csrf_token %}
+                                                <div class="modal-body text-start">
+                                                    <p class="mb-3">Defina a nova senha para <strong>{{ item.full_email }}</strong>.</p>
+                                                    <input type="hidden" name="account" value="{{ selected_account.user|default:'' }}">
+                                                    <input type="hidden" name="domain" value="{{ domain }}">
+                                                    <input type="hidden" name="action" value="change_password">
+                                                    <label for="password{{ forloop.counter }}" class="form-label">Nova senha</label>
+                                                    <div class="input-group">
+                                                        <input type="password" id="password{{ forloop.counter }}" name="password" class="form-control" minlength="8" required>
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-outline-secondary"
+                                                            data-password-toggle
+                                                            data-target-id="password{{ forloop.counter }}"
+                                                            aria-label="Mostrar ou ocultar senha"
+                                                        >
+                                                            <span data-eye-open aria-hidden="true">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                                                                    <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.12 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/>
+                                                                    <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5"/>
+                                                                </svg>
+                                                            </span>
+                                                            <span data-eye-closed aria-hidden="true" class="d-none">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                                                                    <path d="M13.359 11.238 15.5 13.379l-.707.707-2.215-2.215a8.7 8.7 0 0 1-1.943.97A8.8 8.8 0 0 1 8 13.5C3 13.5 0 8 0 8a15.6 15.6 0 0 1 3.146-3.73L1.146 2.27l.708-.707 12.212 12.212zM11.297 9.176l-1.442-1.442a2 2 0 0 1-2.679-2.679L5.734 3.613A7.3 7.3 0 0 1 8 3.5c5 0 8 4.5 8 4.5a15.3 15.3 0 0 1-2.03 2.734z"/>
+                                                                    <path d="M10.477 7.649 8.35 5.523a2 2 0 0 0 2.127 2.126M4.121 5.027l1.747 1.747a2 2 0 0 0 3.105 2.51l1.19 1.19q-.545.174-1.163.176c-2.12 0-3.879-1.168-5.168-2.457A13 13 0 0 1 2.172 8c.286-.42 1.002-1.367 1.949-2.973"/>
+                                                                </svg>
+                                                            </span>
+                                                        </button>
+                                                    </div>
+                                                    <ul class="list-unstyled mt-3 mb-0 small password-rules" data-password-rules data-target-id="password{{ forloop.counter }}">
+                                                        <li data-rule="length" class="d-flex align-items-center gap-2 text-danger">
+                                                            <span data-icon aria-hidden="true">○</span>
+                                                            <span>Minimo de 8 caracteres</span>
+                                                        </li>
+                                                        <li data-rule="upper" class="d-flex align-items-center gap-2 text-danger">
+                                                            <span data-icon aria-hidden="true">○</span>
+                                                            <span>Letra maiuscula</span>
+                                                        </li>
+                                                        <li data-rule="lower" class="d-flex align-items-center gap-2 text-danger">
+                                                            <span data-icon aria-hidden="true">○</span>
+                                                            <span>Letra minuscula</span>
+                                                        </li>
+                                                        <li data-rule="number" class="d-flex align-items-center gap-2 text-danger">
+                                                            <span data-icon aria-hidden="true">○</span>
+                                                            <span>Numero</span>
+                                                        </li>
+                                                        <li data-rule="special" class="d-flex align-items-center gap-2 text-danger">
+                                                            <span data-icon aria-hidden="true">○</span>
+                                                            <span>Caractere especial</span>
+                                                        </li>
+                                                    </ul>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                                                    <button type="submit" class="btn btn-primary">Salvar nova senha</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="4" class="text-center py-4 text-muted">Nenhuma conta encontrada.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (() => {
+        const validators = {
+            length: (value) => value.length >= 8,
+            upper: (value) => /[A-Z]/.test(value),
+            lower: (value) => /[a-z]/.test(value),
+            number: (value) => /\d/.test(value),
+            special: (value) => /[^A-Za-z0-9]/.test(value),
+        };
+
+        document.querySelectorAll("[data-password-rules]").forEach((list) => {
+            const inputId = list.dataset.targetId;
+            const input = document.getElementById(inputId);
+            if (!input) return;
+
+            const updateRules = () => {
+                const value = input.value || "";
+                list.querySelectorAll("[data-rule]").forEach((item) => {
+                    const rule = item.dataset.rule;
+                    const valid = validators[rule](value);
+                    item.classList.toggle("text-danger", !valid);
+                    item.classList.toggle("text-success", valid);
+                    const icon = item.querySelector("[data-icon]");
+                    if (icon) icon.textContent = valid ? "✓" : "○";
+                });
+            };
+
+            input.addEventListener("input", updateRules);
+            updateRules();
+        });
+
+        document.querySelectorAll("[data-password-toggle]").forEach((button) => {
+            const inputId = button.dataset.targetId;
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            const eyeOpen = button.querySelector("[data-eye-open]");
+            const eyeClosed = button.querySelector("[data-eye-closed]");
+
+            button.addEventListener("click", () => {
+                const showing = input.type === "text";
+                input.type = showing ? "password" : "text";
+                if (eyeOpen) eyeOpen.classList.toggle("d-none", !showing);
+                if (eyeClosed) eyeClosed.classList.toggle("d-none", showing);
+            });
+        });
+    })();
+</script>
+{% if open_create_modal %}
+<script>
+    (() => {
+        const modalElement = document.getElementById("createEmailModal");
+        if (!modalElement || !window.bootstrap) return;
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    })();
+</script>
+{% endif %}
+{% endblock %}

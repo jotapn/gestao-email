@@ -1,0 +1,116 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Criar e-mail{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-3">Criar nova conta</h1>
+                <p class="text-muted">Dominio usado: <strong>{{ domain|default:"nao configurado" }}</strong></p>
+                {% if selected_account %}
+                    <p class="text-muted">Conta cPanel: <strong>{{ selected_account.user }}</strong></p>
+                {% endif %}
+
+                <form method="post" novalidate>
+                    {% csrf_token %}
+                    <input type="hidden" name="account" value="{{ selected_account.user|default:'' }}">
+                    <input type="hidden" name="domain" value="{{ domain }}">
+                    <div class="mb-3">
+                        <label for="{{ form.nome.id_for_label }}" class="form-label">{{ form.nome.label }}</label>
+                        <div class="input-group">
+                            {{ form.nome }}
+                            <span class="input-group-text">@{{ domain|default:"dominio" }}</span>
+                        </div>
+                        {% if form.nome.errors %}
+                            <div class="text-danger small mt-1">{{ form.nome.errors|join:", " }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ form.senha.id_for_label }}" class="form-label">{{ form.senha.label }}</label>
+                        {{ form.senha }}
+                        <ul class="list-unstyled mt-2 mb-0 small password-rules" data-password-rules data-target-id="{{ form.senha.id_for_label }}">
+                            <li data-rule="length" class="d-flex align-items-center gap-2 text-danger">
+                                <span data-icon aria-hidden="true">○</span>
+                                <span>Minimo de 8 caracteres</span>
+                            </li>
+                            <li data-rule="upper" class="d-flex align-items-center gap-2 text-danger">
+                                <span data-icon aria-hidden="true">○</span>
+                                <span>Letra maiuscula</span>
+                            </li>
+                            <li data-rule="lower" class="d-flex align-items-center gap-2 text-danger">
+                                <span data-icon aria-hidden="true">○</span>
+                                <span>Letra minuscula</span>
+                            </li>
+                            <li data-rule="number" class="d-flex align-items-center gap-2 text-danger">
+                                <span data-icon aria-hidden="true">○</span>
+                                <span>Numero</span>
+                            </li>
+                            <li data-rule="special" class="d-flex align-items-center gap-2 text-danger">
+                                <span data-icon aria-hidden="true">○</span>
+                                <span>Caractere especial</span>
+                            </li>
+                        </ul>
+                        {% if form.senha.errors %}
+                            <div class="text-danger small mt-1">{{ form.senha.errors|join:", " }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="{{ form.quota.id_for_label }}" class="form-label">{{ form.quota.label }}</label>
+                        {{ form.quota }}
+                        {% if form.quota.help_text %}
+                            <div class="form-text">{{ form.quota.help_text }}</div>
+                        {% endif %}
+                        {% if form.quota.errors %}
+                            <div class="text-danger small mt-1">{{ form.quota.errors|join:", " }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="d-flex justify-content-between gap-2">
+                        <a href="{% if selected_account %}{% url 'email-list' selected_account.user %}{% else %}{% url 'account-list' %}{% endif %}" class="btn btn-light">Cancelar</a>
+                        <button type="submit" class="btn btn-primary">Criar e-mail</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (() => {
+        const validators = {
+            length: (value) => value.length >= 8,
+            upper: (value) => /[A-Z]/.test(value),
+            lower: (value) => /[a-z]/.test(value),
+            number: (value) => /\d/.test(value),
+            special: (value) => /[^A-Za-z0-9]/.test(value),
+        };
+
+        document.querySelectorAll("[data-password-rules]").forEach((list) => {
+            const inputId = list.dataset.targetId;
+            const input = document.getElementById(inputId);
+            if (!input) return;
+
+            const updateRules = () => {
+                const value = input.value || "";
+                list.querySelectorAll("[data-rule]").forEach((item) => {
+                    const rule = item.dataset.rule;
+                    const valid = validators[rule](value);
+                    item.classList.toggle("text-danger", !valid);
+                    item.classList.toggle("text-success", valid);
+                    const icon = item.querySelector("[data-icon]");
+                    if (icon) icon.textContent = valid ? "✓" : "○";
+                });
+            };
+
+            input.addEventListener("input", updateRules);
+            updateRules();
+        });
+    })();
+</script>
+{% endblock %}
