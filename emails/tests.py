@@ -24,10 +24,16 @@ class EmailViewsTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="operador", password="Senha123!")
         self.user.profile.is_admin = False
+        self.user.profile.is_system_admin = False
         self.user.profile.save()
         self.admin = User.objects.create_user(username="admin", password="Senha123!")
         self.admin.profile.is_admin = True
+        self.admin.profile.is_system_admin = False
         self.admin.profile.save()
+        self.system_admin = User.objects.create_user(username="rootadmin", password="Senha123!")
+        self.system_admin.profile.is_admin = False
+        self.system_admin.profile.is_system_admin = True
+        self.system_admin.profile.save()
 
     @patch("emails.views.CpanelClient")
     def test_home_renderiza_contas(self, client_cls):
@@ -121,10 +127,16 @@ class CpanelCompositeActionTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="operador2", password="Senha123!")
         self.user.profile.is_admin = False
+        self.user.profile.is_system_admin = False
         self.user.profile.save()
         self.admin = User.objects.create_user(username="admin2", password="Senha123!")
         self.admin.profile.is_admin = True
+        self.admin.profile.is_system_admin = False
         self.admin.profile.save()
+        self.system_admin = User.objects.create_user(username="sysadmin2", password="Senha123!")
+        self.system_admin.profile.is_admin = False
+        self.system_admin.profile.is_system_admin = True
+        self.system_admin.profile.save()
 
     def test_suspend_user_chama_tres_suspensoes(self):
         client = CpanelClient.__new__(CpanelClient)
@@ -181,6 +193,11 @@ class CpanelCompositeActionTests(TestCase):
         response = self.client.get(reverse("workspace-settings"))
         self.assertEqual(response.status_code, 302)
 
+    def test_admin_comum_nao_pode_configurar_workspace(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("workspace-settings"))
+        self.assertEqual(response.status_code, 302)
+
     @patch("emails.views.send_mail")
     def test_admin_cria_usuario_e_dispara_email(self, send_mail_mock):
         self.client.force_login(self.admin)
@@ -193,7 +210,7 @@ class CpanelCompositeActionTests(TestCase):
                 "email": "novo@cnxtel.com.br",
                 "password": "Senha123!",
                 "is_active": "on",
-                "is_admin": "",
+                "role": "operator",
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -201,7 +218,7 @@ class CpanelCompositeActionTests(TestCase):
         send_mail_mock.assert_called_once()
 
     def test_admin_salva_limite_workspace(self):
-        self.client.force_login(self.admin)
+        self.client.force_login(self.system_admin)
         response = self.client.post(
             reverse("workspace-settings"),
             {
@@ -212,7 +229,7 @@ class CpanelCompositeActionTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(WorkspaceSetting.get_solo().google_workspace_user_limit, 120)
         self.assertEqual(WorkspaceSetting.get_solo().google_workspace_alert_email, "sistemas@oratelecom.com.br")
-        self.assertTrue(EmailLog.objects.filter(acao="configurar workspace google", usuario=self.admin).exists())
+        self.assertTrue(EmailLog.objects.filter(acao="configurar workspace google", usuario=self.system_admin).exists())
 
 
 class CpanelClientTests(TestCase):
@@ -296,6 +313,7 @@ class GoogleWorkspaceViewsTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="operador_google", password="Senha123!")
         self.user.profile.is_admin = False
+        self.user.profile.is_system_admin = False
         self.user.profile.save()
 
     @patch("emails.views.GoogleWorkspaceClient")

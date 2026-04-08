@@ -71,11 +71,17 @@ class LoginForm(AuthenticationForm):
 
 
 class SystemUserForm(forms.ModelForm):
+    ROLE_CHOICES = (
+        ("operator", "Operador"),
+        ("admin", "Admin"),
+        ("system_admin", "Admin do sistema"),
+    )
+
     first_name = forms.CharField(label="Nome", required=False, widget=forms.TextInput(attrs={"class": "form-control"}))
     last_name = forms.CharField(label="Sobrenome", required=False, widget=forms.TextInput(attrs={"class": "form-control"}))
     email = forms.EmailField(label="E-mail", required=False, widget=forms.EmailInput(attrs={"class": "form-control"}))
     is_active = forms.BooleanField(label="Usuario ativo", required=False)
-    is_admin = forms.BooleanField(label="Administrador do sistema", required=False)
+    role = forms.ChoiceField(label="Perfil", choices=ROLE_CHOICES, widget=forms.Select(attrs={"class": "form-select"}))
     password = forms.CharField(
         label="Senha inicial",
         required=False,
@@ -95,9 +101,10 @@ class SystemUserForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if self.instance.pk:
             self.fields["password"].help_text = "Preencha apenas se quiser redefinir a senha."
-            self.fields["is_admin"].initial = getattr(self.instance.profile, "is_admin", False)
+            self.fields["role"].initial = getattr(self.instance.profile, "role", "operator")
         else:
             self.fields["password"].required = True
+            self.fields["role"].initial = "operator"
 
     def clean_password(self):
         password = self.cleaned_data.get("password", "")
@@ -109,6 +116,13 @@ class SystemUserForm(forms.ModelForm):
         cleaned_data = super().clean()
         if self.current_user and self.instance.pk == self.current_user.pk and not cleaned_data.get("is_active", True):
             self.add_error("is_active", "Voce nao pode inativar seu proprio usuario.")
+        if (
+            self.current_user
+            and self.instance.pk == self.current_user.pk
+            and getattr(self.current_user.profile, "is_system_admin", False)
+            and cleaned_data.get("role") != "system_admin"
+        ):
+            self.add_error("role", "Voce nao pode remover seu proprio perfil de admin do sistema.")
         return cleaned_data
 
     def save(self, commit=True):
@@ -119,7 +133,9 @@ class SystemUserForm(forms.ModelForm):
         if commit:
             user.save()
             profile = user.profile
-            profile.is_admin = self.cleaned_data.get("is_admin", False)
+            role = self.cleaned_data.get("role", "operator")
+            profile.is_admin = role == "admin"
+            profile.is_system_admin = role == "system_admin"
             profile.save()
         return user
 

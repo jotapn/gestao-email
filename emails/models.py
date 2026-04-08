@@ -9,6 +9,7 @@ from django.utils import timezone
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     is_admin = models.BooleanField(default=False)
+    is_system_admin = models.BooleanField(default=False)
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -17,6 +18,26 @@ class UserProfile(models.Model):
 
     def __str__(self) -> str:
         return f"Perfil de {self.user.username}"
+
+    @property
+    def can_manage_admin(self) -> bool:
+        return self.is_admin or self.is_system_admin
+
+    @property
+    def role(self) -> str:
+        if self.is_system_admin:
+            return "system_admin"
+        if self.is_admin:
+            return "admin"
+        return "operator"
+
+    @property
+    def role_label(self) -> str:
+        if self.is_system_admin:
+            return "Admin do sistema"
+        if self.is_admin:
+            return "Admin"
+        return "Operador"
 
 
 class EmailLog(models.Model):
@@ -89,9 +110,17 @@ class WorkspaceSetting(models.Model):
 @receiver(post_save, sender=User)
 def ensure_user_profile(sender, instance, created, **kwargs):
     if created:
-        UserProfile.objects.create(user=instance, is_admin=instance.is_superuser)
+        UserProfile.objects.create(
+            user=instance,
+            is_admin=False if instance.is_superuser else instance.is_staff,
+            is_system_admin=instance.is_superuser,
+        )
     else:
         profile, _ = UserProfile.objects.get_or_create(user=instance)
-        if instance.is_superuser and not profile.is_admin:
-            profile.is_admin = True
-            profile.save(update_fields=["is_admin"])
+        updated_fields = []
+        if instance.is_superuser and not profile.is_system_admin:
+            profile.is_system_admin = True
+            profile.is_admin = False
+            updated_fields.extend(["is_system_admin", "is_admin"])
+        if updated_fields:
+            profile.save(update_fields=updated_fields)

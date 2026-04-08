@@ -57,10 +57,11 @@
                             {% endif %}
                         </div>
                         <div class="col-md-6">
-                            <div class="form-check mt-2">
-                                {{ form.is_admin }}
-                                <label for="{{ form.is_admin.id_for_label }}" class="form-check-label">{{ form.is_admin.label }}</label>
-                            </div>
+                            <label for="{{ form.role.id_for_label }}" class="form-label">{{ form.role.label }}</label>
+                            {{ form.role }}
+                            {% if form.role.errors %}
+                                <div class="text-danger small mt-1">{{ form.role.errors|join:", " }}</div>
+                            {% endif %}
                         </div>
                     </div>
                     {% if form.non_field_errors %}

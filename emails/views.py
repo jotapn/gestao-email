@@ -35,8 +35,20 @@ def admin_required(view_func):
     @login_required
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
-        if not getattr(request.user, "profile", None) or not request.user.profile.is_admin:
+        if not getattr(request.user, "profile", None) or not request.user.profile.can_manage_admin:
             messages.error(request, "Acesso restrito a administradores do sistema.")
+            return redirect("account-list")
+        return view_func(request, *args, **kwargs)
+
+    return wrapped
+
+
+def system_admin_required(view_func):
+    @login_required
+    @wraps(view_func)
+    def wrapped(request, *args, **kwargs):
+        if not getattr(request.user, "profile", None) or not request.user.profile.is_system_admin:
+            messages.error(request, "Acesso restrito ao admin do sistema.")
             return redirect("account-list")
         return view_func(request, *args, **kwargs)
 
@@ -434,7 +446,7 @@ def google_dashboard(request):
 
 
 @require_http_methods(["GET", "POST"])
-@admin_required
+@system_admin_required
 def configurar_workspace(request):
     setting = WorkspaceSetting.get_solo()
     previous_limit = setting.google_workspace_user_limit

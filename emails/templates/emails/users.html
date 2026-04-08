@@ -6,7 +6,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="h3 mb-1">Usuarios do sistema</h1>
-        <p class="text-muted mb-0">Admins podem criar, editar e inativar usuarios.</p>
+        <p class="text-muted mb-0">Admins e admin do sistema podem criar, editar e inativar usuarios.</p>
     </div>
     <a href="{% url 'user-create' %}" class="btn btn-primary">Novo usuario</a>
 </div>
@@ -31,7 +31,9 @@
                         <td>{{ user.get_full_name|default:"-" }}</td>
                         <td>{{ user.email|default:"-" }}</td>
                         <td>
-                            {% if user.profile.is_admin %}
+                            {% if user.profile.is_system_admin %}
+                                <span class="badge text-bg-dark">Admin do sistema</span>
+                            {% elif user.profile.is_admin %}
                                 <span class="badge text-bg-primary">Admin</span>
                             {% else %}
                                 <span class="badge text-bg-secondary">Operador</span>

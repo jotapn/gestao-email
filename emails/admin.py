@@ -5,8 +5,8 @@ from .models import EmailLog, UserProfile
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "is_admin", "criado_em")
-    list_filter = ("is_admin",)
+    list_display = ("user", "is_admin", "is_system_admin", "criado_em")
+    list_filter = ("is_admin", "is_system_admin")
     search_fields = ("user__username", "user__email", "user__first_name", "user__last_name")
 
 
