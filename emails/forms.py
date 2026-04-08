@@ -2,6 +2,8 @@ from django import forms
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.models import User
 
+from .models import WorkspaceSetting
+
 PASSWORD_RULES_HELP = "Minimo de 8 caracteres, letra maiuscula, minuscula, numero e caractere especial."
 
 
@@ -162,3 +164,30 @@ class GoogleWorkspaceActionForm(forms.Form):
     )
 
     action = forms.ChoiceField(choices=ACTION_CHOICES)
+
+
+class WorkspaceSettingForm(forms.ModelForm):
+    class Meta:
+        model = WorkspaceSetting
+        fields = ("google_workspace_user_limit", "google_workspace_alert_email")
+        labels = {
+            "google_workspace_user_limit": "Limite de usuarios do Google Workspace",
+            "google_workspace_alert_email": "E-mail para alerta de limite",
+        }
+        widgets = {
+            "google_workspace_user_limit": forms.NumberInput(
+                attrs={"class": "form-control", "min": "0", "placeholder": "Ex: 120"}
+            ),
+            "google_workspace_alert_email": forms.EmailInput(
+                attrs={"class": "form-control", "placeholder": "sistemas@oratelecom.com.br"}
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["google_workspace_user_limit"].help_text = (
+            "Quantidade maxima de usuarios permitida para controle interno."
+        )
+        self.fields["google_workspace_alert_email"].help_text = (
+            "Destinatario que recebera o aviso quando o limite for atingido."
+        )

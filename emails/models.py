@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils import timezone
 
 
 class UserProfile(models.Model):
@@ -39,6 +40,50 @@ class EmailLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.email} - {self.acao} ({self.status})"
+
+
+class WorkspaceSetting(models.Model):
+    google_workspace_user_limit = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="limite de usuarios do Google Workspace",
+    )
+    google_workspace_alert_email = models.EmailField(
+        blank=True,
+        default="sistemas@oratelecom.com.br",
+        verbose_name="e-mail de alerta do Google Workspace",
+    )
+    limit_reached_email_sent_at = models.DateTimeField(null=True, blank=True)
+    atualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="workspace_settings_updates",
+    )
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "configuracao do workspace"
+        verbose_name_plural = "configuracoes do workspace"
+
+    def __str__(self) -> str:
+        return "Configuracao do Google Workspace"
+
+    @classmethod
+    def get_solo(cls) -> "WorkspaceSetting":
+        instance, _ = cls.objects.get_or_create(pk=1)
+        return instance
+
+    def mark_limit_email_sent(self) -> None:
+        self.limit_reached_email_sent_at = timezone.now()
+        self.save(update_fields=["limit_reached_email_sent_at", "atualizado_em"])
+
+    def clear_limit_email_sent(self) -> None:
+        if self.limit_reached_email_sent_at is None:
+            return
+        self.limit_reached_email_sent_at = None
+        self.save(update_fields=["limit_reached_email_sent_at", "atualizado_em"])
 
 
 @receiver(post_save, sender=User)

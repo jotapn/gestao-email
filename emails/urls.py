@@ -10,6 +10,7 @@ urlpatterns = [
     path("google/usuarios/", views.listar_usuarios_google, name="google-user-list"),
     path("google/usuarios/criar/", views.criar_usuario_google, name="google-user-create"),
     path("google/usuarios/acao/<path:email>/", views.acao_usuario_google, name="google-user-action"),
+    path("google/configuracoes/", views.configurar_workspace, name="workspace-settings"),
     path("conta/<str:account>/", views.listar_emails, name="email-list"),
     path("conta/<str:account>/criar/", views.criar_email, name="email-create"),
     path("conta/<str:account>/acao/<path:email>/", views.acao_email, name="email-action"),

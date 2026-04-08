@@ -15,6 +15,7 @@
                     <a class="nav-link" href="{% url 'account-list' %}">cPanel</a>
                     <a class="nav-link" href="{% url 'google-dashboard' %}">Google Workspace</a>
                     {% if request.user.profile.is_admin %}
+                        <a class="nav-link" href="{% url 'workspace-settings' %}">Config. Workspace</a>
                         <a class="nav-link" href="{% url 'user-list' %}">Usuarios</a>
                         <a class="nav-link" href="{% url 'email-log' %}">Logs</a>
                     {% endif %}

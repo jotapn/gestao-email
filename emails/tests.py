@@ -5,9 +5,12 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .forms import EmailCreateForm
-from .models import EmailLog
+from .models import EmailLog, WorkspaceSetting
 from .services.cpanel_client import CpanelAPIError, CpanelClient
-from .services.google_workspace_client import GoogleWorkspaceClient, GoogleWorkspaceUser
+from .services.google_workspace_client import (
+    GoogleWorkspaceClient,
+    GoogleWorkspaceUser,
+)
 
 
 class EmailCreateFormTests(TestCase):
@@ -173,6 +176,11 @@ class CpanelCompositeActionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "admin")
 
+    def test_configuracao_workspace_exige_admin(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("workspace-settings"))
+        self.assertEqual(response.status_code, 302)
+
     @patch("emails.views.send_mail")
     def test_admin_cria_usuario_e_dispara_email(self, send_mail_mock):
         self.client.force_login(self.admin)
@@ -191,6 +199,20 @@ class CpanelCompositeActionTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(User.objects.filter(username="novo").exists())
         send_mail_mock.assert_called_once()
+
+    def test_admin_salva_limite_workspace(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("workspace-settings"),
+            {
+                "google_workspace_user_limit": 120,
+                "google_workspace_alert_email": "sistemas@oratelecom.com.br",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(WorkspaceSetting.get_solo().google_workspace_user_limit, 120)
+        self.assertEqual(WorkspaceSetting.get_solo().google_workspace_alert_email, "sistemas@oratelecom.com.br")
+        self.assertTrue(EmailLog.objects.filter(acao="configurar workspace google", usuario=self.admin).exists())
 
 
 class CpanelClientTests(TestCase):
@@ -279,6 +301,7 @@ class GoogleWorkspaceViewsTests(TestCase):
     @patch("emails.views.GoogleWorkspaceClient")
     def test_google_dashboard_renderiza_indicadores(self, client_cls):
         self.client.force_login(self.user)
+        WorkspaceSetting.get_solo().delete()
         client_cls.return_value.list_users.return_value = [
             GoogleWorkspaceUser(
                 primary_email="ativo@oratelecom.com.br",
@@ -303,6 +326,82 @@ class GoogleWorkspaceViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Google Workspace")
         self.assertContains(response, "2")
+
+    @patch("emails.views.send_mail")
+    @patch("emails.views.GoogleWorkspaceClient")
+    def test_google_dashboard_envia_email_quando_atinge_limite(self, client_cls, send_mail_mock):
+        self.client.force_login(self.user)
+        setting = WorkspaceSetting.get_solo()
+        setting.google_workspace_user_limit = 2
+        setting.google_workspace_alert_email = "alerta@oratelecom.com.br"
+        setting.save()
+        client_cls.return_value.list_users.return_value = [
+            GoogleWorkspaceUser(
+                primary_email="um@oratelecom.com.br",
+                full_name="Um",
+                suspended=False,
+                org_unit_path="/",
+                is_admin=False,
+                aliases=[],
+            ),
+            GoogleWorkspaceUser(
+                primary_email="dois@oratelecom.com.br",
+                full_name="Dois",
+                suspended=False,
+                org_unit_path="/",
+                is_admin=False,
+                aliases=[],
+            ),
+        ]
+
+        response = self.client.get(reverse("google-dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        send_mail_mock.assert_called_once()
+        self.assertEqual(send_mail_mock.call_args.kwargs["recipient_list"], ["alerta@oratelecom.com.br"])
+        setting.refresh_from_db()
+        self.assertIsNotNone(setting.limit_reached_email_sent_at)
+
+    @patch("emails.views.send_mail")
+    @patch("emails.views.GoogleWorkspaceClient")
+    def test_google_dashboard_mostra_aviso_quando_faltam_duas_vagas(self, client_cls, send_mail_mock):
+        self.client.force_login(self.user)
+        setting = WorkspaceSetting.get_solo()
+        setting.google_workspace_user_limit = 5
+        setting.limit_reached_email_sent_at = None
+        setting.save()
+        client_cls.return_value.list_users.return_value = [
+            GoogleWorkspaceUser(
+                primary_email="1@oratelecom.com.br",
+                full_name="Um",
+                suspended=False,
+                org_unit_path="/",
+                is_admin=False,
+                aliases=[],
+            ),
+            GoogleWorkspaceUser(
+                primary_email="2@oratelecom.com.br",
+                full_name="Dois",
+                suspended=False,
+                org_unit_path="/",
+                is_admin=False,
+                aliases=[],
+            ),
+            GoogleWorkspaceUser(
+                primary_email="3@oratelecom.com.br",
+                full_name="Tres",
+                suspended=False,
+                org_unit_path="/",
+                is_admin=False,
+                aliases=[],
+            ),
+        ]
+
+        response = self.client.get(reverse("google-dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "restam 2 vaga")
+        send_mail_mock.assert_not_called()
 
     @patch("emails.views.GoogleWorkspaceClient")
     def test_google_lista_filtra_por_status(self, client_cls):

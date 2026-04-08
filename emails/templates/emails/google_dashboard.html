@@ -48,6 +48,17 @@
                         </div>
                     </div>
                 </div>
+                {% if limit_status %}
+                    {% if limit_status.reached %}
+                        <div class="alert alert-danger py-2 small">
+                            Limite do Google Workspace atingido: {{ limit_status.used }}/{{ limit_status.limit }} usuarios.
+                        </div>
+                    {% elif limit_status.warning %}
+                        <div class="alert alert-warning py-2 small">
+                            Atencao: restam {{ limit_status.remaining }} vaga{{ limit_status.remaining|pluralize }} para atingir o limite do Google Workspace.
+                        </div>
+                    {% endif %}
+                {% endif %}
                 <div class="mt-auto d-grid gap-2">
                     <a href="{% url 'google-user-list' %}" class="btn btn-primary">Abrir usuarios</a>
                     <a href="{% url 'google-user-create' %}" class="btn btn-outline-secondary">Criar usuario</a>

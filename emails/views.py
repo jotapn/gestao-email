@@ -10,6 +10,7 @@ from django.contrib.auth.models import User
 from django.core.mail import send_mail
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from .forms import (
@@ -20,8 +21,9 @@ from .forms import (
     GoogleWorkspaceUserCreateForm,
     LoginForm,
     SystemUserForm,
+    WorkspaceSettingForm,
 )
-from .models import EmailLog
+from .models import EmailLog, WorkspaceSetting
 from .services.cpanel_client import CpanelAPIError, CpanelClient
 from .services.google_workspace_client import GoogleWorkspaceAPIError, GoogleWorkspaceClient
 
@@ -260,6 +262,49 @@ def _render_google_user_list_page(request, *, create_form=None, open_create_moda
     return render(request, "emails/google_users.html", context)
 
 
+def _workspace_limit_status(total_users: int, setting: WorkspaceSetting | None) -> dict | None:
+    if not setting or setting.google_workspace_user_limit is None:
+        return None
+
+    limit = setting.google_workspace_user_limit
+    remaining = max(limit - total_users, 0)
+    reached = total_users >= limit
+    warning = not reached and remaining <= 2
+    return {
+        "limit": limit,
+        "used": total_users,
+        "remaining": remaining,
+        "reached": reached,
+        "warning": warning,
+    }
+
+
+def _maybe_send_workspace_limit_email(setting: WorkspaceSetting, limit_status: dict | None) -> None:
+    if not limit_status:
+        setting.clear_limit_email_sent()
+        return
+
+    if limit_status["reached"]:
+        if setting.limit_reached_email_sent_at:
+            return
+        send_mail(
+            subject="Limite do Google Workspace atingido",
+            message=(
+                "O limite configurado para usuarios do Google Workspace foi atingido.\n\n"
+                f"Limite: {limit_status['limit']}\n"
+                f"Em uso: {limit_status['used']}\n"
+                f"Data: {timezone.localtime().strftime('%d/%m/%Y %H:%M:%S')}\n"
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[setting.google_workspace_alert_email or "sistemas@oratelecom.com.br"],
+            fail_silently=False,
+        )
+        setting.mark_limit_email_sent()
+        return
+
+    setting.clear_limit_email_sent()
+
+
 def _send_user_created_email(request, user: User, raw_password: str) -> None:
     if not user.email:
         return
@@ -307,6 +352,7 @@ def listar_contas(request):
     accounts = []
     error_message = None
     google_summary = None
+    workspace_setting = WorkspaceSetting.get_solo()
     try:
         root_client = CpanelClient()
         accounts = root_client.list_accounts()
@@ -321,16 +367,24 @@ def listar_contas(request):
         messages.error(request, error_message)
     try:
         google_client = GoogleWorkspaceClient()
+        google_users = google_client.list_users(max_results=500)
+        limit_status = _workspace_limit_status(len(google_users), workspace_setting)
+        try:
+            _maybe_send_workspace_limit_email(workspace_setting, limit_status)
+        except Exception:
+            logger.exception("Erro ao enviar alerta de limite do Google Workspace")
         google_summary = {
             "domain": settings.GOOGLE_WORKSPACE_DOMAIN,
             "admin_email": settings.GOOGLE_WORKSPACE_ADMIN_EMAIL,
-            **_google_workspace_stats(google_client.list_users(max_results=500)),
+            "limit_status": limit_status,
+            **_google_workspace_stats(google_users),
         }
     except Exception as exc:
         logger.exception("Erro ao carregar resumo do Google Workspace")
         google_summary = {
             "domain": settings.GOOGLE_WORKSPACE_DOMAIN,
             "admin_email": settings.GOOGLE_WORKSPACE_ADMIN_EMAIL,
+            "limit_status": None,
             "stats_error": _friendly_error(exc),
             "total_users": None,
             "active_users": None,
@@ -353,10 +407,17 @@ def listar_contas(request):
 def google_dashboard(request):
     stats = {"total_users": 0, "active_users": 0, "suspended_users": 0}
     error_message = None
+    limit_status = None
+    workspace_setting = WorkspaceSetting.get_solo()
     try:
         client = GoogleWorkspaceClient()
         users = client.list_users(max_results=500)
         stats = _google_workspace_stats(users)
+        limit_status = _workspace_limit_status(len(users), workspace_setting)
+        try:
+            _maybe_send_workspace_limit_email(workspace_setting, limit_status)
+        except Exception:
+            logger.exception("Erro ao enviar alerta de limite do Google Workspace")
     except Exception as exc:
         logger.exception("Erro ao carregar dashboard Google Workspace")
         error_message = _friendly_error(exc)
@@ -365,10 +426,50 @@ def google_dashboard(request):
     context = {
         "workspace_domain": settings.GOOGLE_WORKSPACE_DOMAIN,
         "workspace_admin_email": settings.GOOGLE_WORKSPACE_ADMIN_EMAIL,
+        "limit_status": limit_status,
         "error_message": error_message,
         **stats,
     }
     return render(request, "emails/google_dashboard.html", context)
+
+
+@require_http_methods(["GET", "POST"])
+@admin_required
+def configurar_workspace(request):
+    setting = WorkspaceSetting.get_solo()
+    previous_limit = setting.google_workspace_user_limit
+    previous_email = setting.google_workspace_alert_email
+    form = WorkspaceSettingForm(request.POST or None, instance=setting)
+    if request.method == "POST" and form.is_valid():
+        setting = form.save(commit=False)
+        setting.atualizado_por = request.user
+        if (
+            previous_limit != setting.google_workspace_user_limit
+            or previous_email != setting.google_workspace_alert_email
+        ):
+            setting.limit_reached_email_sent_at = None
+        setting.save()
+        detalhe = (
+            f"Limite anterior: {previous_limit if previous_limit is not None else '-'} | "
+            f"Novo limite: {setting.google_workspace_user_limit if setting.google_workspace_user_limit is not None else '-'} | "
+            f"E-mail anterior: {previous_email or '-'} | "
+            f"Novo e-mail: {setting.google_workspace_alert_email or '-'}"
+        )
+        _log_operation(
+            request.user,
+            setting.google_workspace_alert_email or "workspace@oratelecom.com.br",
+            "configurar workspace google",
+            "sucesso",
+            detalhe,
+        )
+        messages.success(request, "Configuracao do Google Workspace atualizada com sucesso.")
+        return redirect("workspace-settings")
+
+    return render(
+        request,
+        "emails/workspace_settings.html",
+        {"form": form, "page_title": "Configuracao do Google Workspace"},
+    )
 
 
 @require_GET
