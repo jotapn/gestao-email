@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,23 +35,35 @@ class GoogleWorkspaceClient:
         self.domain = settings.GOOGLE_WORKSPACE_DOMAIN
         self.admin_email = settings.GOOGLE_WORKSPACE_ADMIN_EMAIL
         self.service_account_file = settings.GOOGLE_SERVICE_ACCOUNT_FILE
+        self.service_account_json = settings.GOOGLE_SERVICE_ACCOUNT_JSON
         self.default_org_unit = settings.GOOGLE_WORKSPACE_DEFAULT_ORG_UNIT
         self.licensing_enabled = settings.GOOGLE_WORKSPACE_LICENSING_ENABLED
         self.product_id = settings.GOOGLE_WORKSPACE_PRODUCT_ID
         self.sku_id = settings.GOOGLE_WORKSPACE_SKU_ID
 
-        if not all([self.domain, self.admin_email, self.service_account_file]):
+        if not self.domain or not self.admin_email or not (self.service_account_json or self.service_account_file):
             raise GoogleWorkspaceAPIError(
-                "Configure GOOGLE_WORKSPACE_DOMAIN, GOOGLE_WORKSPACE_ADMIN_EMAIL e GOOGLE_SERVICE_ACCOUNT_FILE no .env."
+                "Configure GOOGLE_WORKSPACE_DOMAIN, GOOGLE_WORKSPACE_ADMIN_EMAIL e GOOGLE_SERVICE_ACCOUNT_JSON ou GOOGLE_SERVICE_ACCOUNT_FILE no .env."
             )
 
     def _build_credentials(self, scopes: tuple[str, ...]):
         try:
+            if self.service_account_json:
+                info = json.loads(self.service_account_json)
+                return service_account.Credentials.from_service_account_info(
+                    info,
+                    scopes=list(scopes),
+                    subject=self.admin_email,
+                )
             return service_account.Credentials.from_service_account_file(
                 self.service_account_file,
                 scopes=list(scopes),
                 subject=self.admin_email,
             )
+        except json.JSONDecodeError as exc:
+            raise GoogleWorkspaceAPIError(
+                f"GOOGLE_SERVICE_ACCOUNT_JSON contem JSON invalido: {exc}"
+            ) from exc
         except OSError as exc:
             raise GoogleWorkspaceAPIError(
                 f"Nao foi possivel ler o arquivo da service account: {exc}"

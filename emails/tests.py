@@ -274,6 +274,29 @@ class CpanelClientTests(TestCase):
 
 class GoogleWorkspaceClientTests(TestCase):
     @patch("emails.services.google_workspace_client.build")
+    @patch("emails.services.google_workspace_client.service_account.Credentials.from_service_account_info")
+    def test_list_users_aceita_json_em_variavel_de_ambiente(self, credentials_mock, build_mock):
+        service = MagicMock()
+        build_mock.return_value = service
+        credentials_mock.return_value = object()
+        service.users.return_value.list.return_value.execute.return_value = {"users": []}
+
+        with patch.multiple(
+            "django.conf.settings",
+            GOOGLE_WORKSPACE_DOMAIN="oratelecom.com.br",
+            GOOGLE_WORKSPACE_ADMIN_EMAIL="padua.costa@oratelecom.com.br",
+            GOOGLE_SERVICE_ACCOUNT_FILE="",
+            GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account","project_id":"teste","private_key_id":"abc","private_key":"-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n","client_email":"bot@teste.iam.gserviceaccount.com","client_id":"123","token_uri":"https://oauth2.googleapis.com/token"}',
+            GOOGLE_WORKSPACE_DEFAULT_ORG_UNIT="",
+            GOOGLE_WORKSPACE_LICENSING_ENABLED=False,
+            GOOGLE_WORKSPACE_PRODUCT_ID="",
+            GOOGLE_WORKSPACE_SKU_ID="",
+        ):
+            GoogleWorkspaceClient().list_users(max_results=5)
+
+        credentials_mock.assert_called_once()
+
+    @patch("emails.services.google_workspace_client.build")
     @patch("emails.services.google_workspace_client.service_account.Credentials.from_service_account_file")
     def test_list_users_normaliza_resposta(self, credentials_mock, build_mock):
         service = MagicMock()
@@ -297,6 +320,7 @@ class GoogleWorkspaceClientTests(TestCase):
             GOOGLE_WORKSPACE_DOMAIN="oratelecom.com.br",
             GOOGLE_WORKSPACE_ADMIN_EMAIL="padua.costa@oratelecom.com.br",
             GOOGLE_SERVICE_ACCOUNT_FILE="C:/credenciais/google.json",
+            GOOGLE_SERVICE_ACCOUNT_JSON="",
             GOOGLE_WORKSPACE_DEFAULT_ORG_UNIT="",
             GOOGLE_WORKSPACE_LICENSING_ENABLED=False,
             GOOGLE_WORKSPACE_PRODUCT_ID="",

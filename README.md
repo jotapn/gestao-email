@@ -157,6 +157,7 @@ Para habilitar o modulo Google Workspace:
 GOOGLE_WORKSPACE_DOMAIN=seudominio.com.br
 GOOGLE_WORKSPACE_ADMIN_EMAIL=admin@seudominio.com.br
 GOOGLE_SERVICE_ACCOUNT_FILE=assets/service_account.json
+GOOGLE_SERVICE_ACCOUNT_JSON=
 GOOGLE_WORKSPACE_DEFAULT_ORG_UNIT=
 GOOGLE_WORKSPACE_LICENSING_ENABLED=False
 GOOGLE_WORKSPACE_PRODUCT_ID=
@@ -164,6 +165,8 @@ GOOGLE_WORKSPACE_SKU_ID=
 ```
 
 Se `GOOGLE_WORKSPACE_LICENSING_ENABLED=True`, tambem e necessario informar `GOOGLE_WORKSPACE_PRODUCT_ID` e `GOOGLE_WORKSPACE_SKU_ID`.
+
+No Coolify, a forma mais simples e usar `GOOGLE_SERVICE_ACCOUNT_JSON` com o JSON completo da service account em uma unica variavel de ambiente. `GOOGLE_SERVICE_ACCOUNT_FILE` continua disponivel como fallback.
 
 ## Como o sistema escolhe o modo cPanel
 
@@ -272,7 +275,7 @@ Para uso com SQLite em container, o `docker-compose.yml` ja aponta `SQLITE_PATH=
 ## Observacoes operacionais
 
 - `WHM_VERIFY_SSL=False` e `CPANEL_VERIFY_SSL=False` devem ser usados apenas em ambientes controlados.
-- O arquivo de service account do Google precisa existir no caminho informado em `GOOGLE_SERVICE_ACCOUNT_FILE`.
+- O Google Workspace pode usar `GOOGLE_SERVICE_ACCOUNT_JSON` diretamente no ambiente ou, alternativamente, um arquivo em `GOOGLE_SERVICE_ACCOUNT_FILE`.
 - O historico de operacoes e salvo no banco local da aplicacao.
 - A exclusao de caixa postal no cPanel possui tratamento para timeout e tenta validar se a conta realmente saiu da listagem.
 
