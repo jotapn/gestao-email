@@ -1,12 +1,12 @@
 {% extends "emails/base.html" %}
 
-{% block title %}Contas cPanel{% endblock %}
+{% block title %}{{ page_title|default:"Dashboard de Contas" }}{% endblock %}
 
 {% block content %}
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
     <div>
-        <h1 class="h3 mb-1">Contas cPanel</h1>
-        <p class="text-muted mb-0">Selecione uma conta para ver e gerenciar os e-mails.</p>
+        <h1 class="h3 mb-1">{{ page_heading|default:"Dashboard de Contas" }}</h1>
+        <p class="text-muted mb-0">{{ page_subtitle|default:"Resumo do Google Workspace e das contas cPanel para gerenciamento de e-mails." }}</p>
     </div>
     <div class="text-muted small">
         {{ total_accounts }} conta{{ total_accounts|pluralize }} encontrada{{ total_accounts|pluralize }}
@@ -14,7 +14,7 @@
 </div>
 
 {% if error_message %}
-    <div class="alert alert-warning">Nao foi possivel carregar as contas do WHM.</div>
+    <div class="alert alert-warning">Não foi possível carregar as contas do WHM.</div>
 {% endif %}
 
 <div class="row g-4">
@@ -29,7 +29,7 @@
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <span class="badge text-bg-primary">Google</span>
-                            <a href="{% url 'google-user-create' %}" class="btn btn-sm btn-outline-secondary">Criar usuario</a>
+                            <a href="{% url 'google-user-create' %}" class="btn btn-sm btn-outline-secondary">Criar usuário</a>
                         </div>
                     </div>
 
@@ -63,23 +63,23 @@
                     {% if google_summary.limit_status %}
                         {% if google_summary.limit_status.reached %}
                             <div class="alert alert-danger py-2 small">
-                                Limite do Google Workspace atingido: {{ google_summary.limit_status.used }}/{{ google_summary.limit_status.limit }} usuarios.
+                                Limite do Google Workspace atingido: {{ google_summary.limit_status.used }}/{{ google_summary.limit_status.limit }} usuários.
                             </div>
                         {% elif google_summary.limit_status.warning %}
                             <div class="alert alert-warning py-2 small">
-                                Atencao: restam {{ google_summary.limit_status.remaining }} vaga{{ google_summary.limit_status.remaining|pluralize }} para atingir o limite do Google Workspace.
+                                Atenção: restam {{ google_summary.limit_status.remaining }} vaga{{ google_summary.limit_status.remaining|pluralize }} para atingir o limite do Google Workspace.
                             </div>
                         {% endif %}
                     {% endif %}
 
                     {% if google_summary.stats_error %}
                         <div class="alert alert-warning py-2 small">
-                            Nao foi possivel calcular os indicadores do Google Workspace.
+                            Não foi possível calcular os indicadores do Google Workspace.
                         </div>
                     {% endif %}
 
                     <div class="mt-auto d-grid gap-2">
-                        <a href="{% url 'google-user-list' %}" class="btn btn-primary">Abrir usuarios</a>
+                        <a href="{% url 'google-user-list' %}" class="btn btn-primary">Abrir usuários</a>
                     </div>
                 </div>
             </div>
@@ -133,7 +133,7 @@
 
                     {% if account.stats_error %}
                         <div class="alert alert-warning py-2 small">
-                            Nao foi possivel calcular os indicadores de e-mail desta conta.
+                            Não foi possível calcular os indicadores de e-mail desta conta.
                         </div>
                     {% endif %}
 
@@ -153,4 +153,20 @@
         </div>
     {% endfor %}
 </div>
+
+{% if page_obj.paginator.num_pages > 1 %}
+    <nav aria-label="Paginação de contas" class="mt-4">
+        <ul class="pagination justify-content-center mb-0">
+            <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                <a class="page-link" href="?{% if page_query %}{{ page_query }}&{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}">Anterior</a>
+            </li>
+            <li class="page-item disabled">
+                <span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+            </li>
+            <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                <a class="page-link" href="?{% if page_query %}{{ page_query }}&{% endif %}page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}">Próxima</a>
+            </li>
+        </ul>
+    </nav>
+{% endif %}
 {% endblock %}

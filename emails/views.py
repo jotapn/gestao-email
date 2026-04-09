@@ -3,11 +3,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps
 
 from django.conf import settings
+from django.core.cache import cache
 from django.contrib import messages
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.mail import send_mail
+from django.core.paginator import EmptyPage, Paginator
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -20,6 +22,8 @@ from .forms import (
     GoogleWorkspaceActionForm,
     GoogleWorkspaceUserCreateForm,
     LoginForm,
+    SelfProfileForm,
+    StyledPasswordChangeForm,
     SystemUserForm,
     WorkspaceSettingForm,
 )
@@ -29,6 +33,18 @@ from .services.google_workspace_client import GoogleWorkspaceAPIError, GoogleWor
 
 logger = logging.getLogger("emails")
 ACCOUNT_STATS_MAX_WORKERS = 8
+REMOTE_CACHE_TIMEOUT = 60
+EMAIL_LIST_CACHE_TIMEOUT = 30
+GOOGLE_USERS_PER_PAGE = 50
+EMAILS_PER_PAGE = 25
+HISTORY_PER_PAGE = 50
+SYSTEM_USERS_PER_PAGE = 25
+ACCOUNTS_PER_PAGE = 12
+ACCOUNT_PRIORITY_TERMS = (
+    "cnxtel",
+    "mercadodoprovedo",
+    "mercado do provedor",
+)
 
 
 def admin_required(view_func):
@@ -63,6 +79,72 @@ def _friendly_error(exc: Exception) -> str:
     if isinstance(exc, (CpanelAPIError, GoogleWorkspaceAPIError)):
         return str(exc)
     return "Nao foi possivel concluir a operacao no servidor."
+
+
+def _cache_get_or_set(cache_key: str, timeout: int, factory):
+    if getattr(settings, "IS_TESTING", False):
+        return factory()
+    cached_value = cache.get(cache_key)
+    if cached_value is not None:
+        return cached_value
+    value = factory()
+    cache.set(cache_key, value, timeout)
+    return value
+
+
+def _cpanel_accounts_cache_key() -> str:
+    return "cpanel:accounts"
+
+
+def _cpanel_account_stats_cache_key(account_user: str, domain: str) -> str:
+    return f"cpanel:account-stats:{account_user}:{domain}"
+
+
+def _cpanel_email_list_cache_key(account_user: str, domain: str) -> str:
+    return f"cpanel:emails:{account_user}:{domain}"
+
+
+def _google_users_cache_key() -> str:
+    return "google:users"
+
+
+def _invalidate_cpanel_account_cache(account_user: str | None = None, domain: str | None = None) -> None:
+    cache.delete(_cpanel_accounts_cache_key())
+    if account_user and domain:
+        cache.delete(_cpanel_account_stats_cache_key(account_user, domain))
+        cache.delete(_cpanel_email_list_cache_key(account_user, domain))
+
+
+def _invalidate_google_cache() -> None:
+    cache.delete(_google_users_cache_key())
+
+
+def _get_page_base_query(request, page_param: str = "page") -> str:
+    query = request.GET.copy()
+    query.pop(page_param, None)
+    return query.urlencode()
+
+
+def _paginate_items(request, items, per_page: int, *, page_param: str = "page"):
+    paginator = Paginator(items, per_page)
+    page_number = request.GET.get(page_param) or 1
+    try:
+        page_obj = paginator.page(page_number)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages)
+    return page_obj, _get_page_base_query(request, page_param=page_param)
+
+
+def _account_sort_key(account: dict) -> tuple[int, str]:
+    domain = str(account.get("domain") or "").lower()
+    user = str(account.get("user") or "").lower()
+    haystack = f"{domain} {user}"
+
+    for index, term in enumerate(ACCOUNT_PRIORITY_TERMS):
+        if term in haystack:
+            return (index, domain)
+
+    return (len(ACCOUNT_PRIORITY_TERMS), domain)
 
 
 def _is_truthy(value):
@@ -115,8 +197,12 @@ def _email_stats(items):
 def _account_with_stats(account):
     account_view = dict(account)
     try:
-        client = CpanelClient(cpanel_user=account["user"], domain=account["domain"])
-        stats = _email_stats(client.list_emails(account["domain"]))
+        stats_cache_key = _cpanel_account_stats_cache_key(account["user"], account["domain"])
+        stats = _cache_get_or_set(
+            stats_cache_key,
+            REMOTE_CACHE_TIMEOUT,
+            lambda: _email_stats(_fetch_cpanel_emails(account["user"], account["domain"])),
+        )
     except Exception as exc:
         logger.exception("Erro ao carregar estatisticas da conta %s", account["user"])
         account_view.update(
@@ -146,7 +232,11 @@ def _filter_email_items(items, search_term: str = "", status_filter: str = ""):
 
 def _resolve_account_context(request, account_user: str | None = None):
     root_client = CpanelClient()
-    accounts = root_client.list_accounts()
+    accounts = _cache_get_or_set(
+        _cpanel_accounts_cache_key(),
+        REMOTE_CACHE_TIMEOUT,
+        root_client.list_accounts,
+    )
     if not accounts:
         raise CpanelAPIError("Nenhuma conta cPanel disponivel para gerenciamento.")
 
@@ -182,6 +272,23 @@ def _resolve_account_context(request, account_user: str | None = None):
     return managed_client, accounts, selected
 
 
+def _fetch_cpanel_emails(account_user: str, domain: str):
+    cache_key = _cpanel_email_list_cache_key(account_user, domain)
+    return _cache_get_or_set(
+        cache_key,
+        EMAIL_LIST_CACHE_TIMEOUT,
+        lambda: CpanelClient(cpanel_user=account_user, domain=domain).list_emails(domain),
+    )
+
+
+def _fetch_google_users(max_results: int = 1000):
+    return _cache_get_or_set(
+        _google_users_cache_key(),
+        REMOTE_CACHE_TIMEOUT,
+        lambda: GoogleWorkspaceClient().list_users(max_results=max_results),
+    )
+
+
 def _render_email_list_page(request, account, *, create_form=None, open_create_modal: bool = False):
     emails = []
     error_message = None
@@ -194,15 +301,21 @@ def _render_email_list_page(request, account, *, create_form=None, open_create_m
     try:
         client, accounts, selected_account = _resolve_account_context(request, account_user=account)
         domain = selected_account["domain"]
-        emails = [_normalize_email_item(item) for item in client.list_emails(domain)]
+        emails = [
+            _normalize_email_item(item)
+            for item in _fetch_cpanel_emails(selected_account["user"], domain)
+        ]
         emails = _filter_email_items(emails, search_term=search_term, status_filter=status_filter)
     except Exception as exc:
         logger.exception("Erro ao listar e-mails")
         error_message = _friendly_error(exc)
         messages.error(request, error_message)
 
+    page_obj, page_query = _paginate_items(request, emails, EMAILS_PER_PAGE)
     context = {
-        "emails": emails,
+        "emails": page_obj.object_list,
+        "page_obj": page_obj,
+        "page_query": page_query,
         "domain": domain,
         "accounts": accounts,
         "selected_account": selected_account,
@@ -251,17 +364,19 @@ def _render_google_user_list_page(request, *, create_form=None, open_create_moda
     status_filter = request.GET.get("status", "").strip()
 
     try:
-        client = GoogleWorkspaceClient()
-        users = client.list_users(max_results=500)
+        users = _fetch_google_users()
         users = _filter_google_users(users, search_term=search_term, status_filter=status_filter)
     except Exception as exc:
         logger.exception("Erro ao listar usuarios Google Workspace")
         error_message = _friendly_error(exc)
         messages.error(request, error_message)
 
+    page_obj, page_query = _paginate_items(request, users, GOOGLE_USERS_PER_PAGE)
     context = {
         "workspace_domain": settings.GOOGLE_WORKSPACE_DOMAIN,
-        "users": users,
+        "users": page_obj.object_list,
+        "page_obj": page_obj,
+        "page_query": page_query,
         "error_message": error_message,
         "search_term": search_term,
         "status_filter": status_filter,
@@ -358,28 +473,68 @@ def logout_view(request):
     return redirect("login")
 
 
-@require_GET
+@require_http_methods(["GET", "POST"])
 @login_required
-def listar_contas(request):
+def meu_perfil(request):
+    profile_form = SelfProfileForm(instance=request.user)
+    password_form = StyledPasswordChangeForm(user=request.user)
+
+    if request.method == "POST":
+        form_type = request.POST.get("form_type")
+        if form_type == "profile":
+            profile_form = SelfProfileForm(request.POST, instance=request.user)
+            if profile_form.is_valid():
+                profile_form.save()
+                messages.success(request, "Seus dados foram atualizados com sucesso.")
+                return redirect("my-profile")
+        elif form_type == "password":
+            password_form = StyledPasswordChangeForm(user=request.user, data=request.POST)
+            if password_form.is_valid():
+                user = password_form.save()
+                update_session_auth_hash(request, user)
+                messages.success(request, "Sua senha foi atualizada com sucesso.")
+                return redirect("my-profile")
+        else:
+            messages.error(request, "Formulario invalido.")
+
+    return render(
+        request,
+        "emails/profile.html",
+        {"profile_form": profile_form, "password_form": password_form},
+    )
+
+
+def _load_cpanel_accounts():
     accounts = []
     error_message = None
-    google_summary = None
-    workspace_setting = WorkspaceSetting.get_solo()
     try:
         root_client = CpanelClient()
-        accounts = root_client.list_accounts()
+        accounts = _cache_get_or_set(
+            _cpanel_accounts_cache_key(),
+            REMOTE_CACHE_TIMEOUT,
+            root_client.list_accounts,
+        )
         max_workers = min(ACCOUNT_STATS_MAX_WORKERS, max(1, len(accounts)))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(_account_with_stats, account) for account in accounts]
             accounts = [future.result() for future in as_completed(futures)]
-        accounts.sort(key=lambda item: item["domain"])
+        accounts.sort(key=_account_sort_key)
     except Exception as exc:
         logger.exception("Erro ao listar contas cPanel")
         error_message = _friendly_error(exc)
+    return accounts, error_message
+
+
+@require_GET
+@login_required
+def listar_contas(request):
+    accounts, error_message = _load_cpanel_accounts()
+    google_summary = None
+    workspace_setting = WorkspaceSetting.get_solo()
+    if error_message:
         messages.error(request, error_message)
     try:
-        google_client = GoogleWorkspaceClient()
-        google_users = google_client.list_users(max_results=500)
+        google_users = _fetch_google_users()
         limit_status = _workspace_limit_status(len(google_users), workspace_setting)
         try:
             _maybe_send_workspace_limit_email(workspace_setting, limit_status)
@@ -402,14 +557,41 @@ def listar_contas(request):
             "active_users": None,
             "suspended_users": None,
         }
+    page_obj, page_query = _paginate_items(request, accounts, ACCOUNTS_PER_PAGE)
     return render(
         request,
         "emails/accounts.html",
         {
-            "accounts": accounts,
+            "accounts": page_obj.object_list,
+            "page_obj": page_obj,
+            "page_query": page_query,
             "google_summary": google_summary,
             "error_message": error_message,
             "total_accounts": len(accounts),
+        },
+    )
+
+
+@require_GET
+@login_required
+def listar_contas_cpanel(request):
+    accounts, error_message = _load_cpanel_accounts()
+    if error_message:
+        messages.error(request, error_message)
+    page_obj, page_query = _paginate_items(request, accounts, ACCOUNTS_PER_PAGE)
+    return render(
+        request,
+        "emails/accounts.html",
+        {
+            "accounts": page_obj.object_list,
+            "page_obj": page_obj,
+            "page_query": page_query,
+            "google_summary": None,
+            "error_message": error_message,
+            "total_accounts": len(accounts),
+            "page_title": "Contas cPanel",
+            "page_heading": "Contas cPanel",
+            "page_subtitle": "Selecione uma conta cPanel para ver e gerenciar os e-mails.",
         },
     )
 
@@ -422,8 +604,7 @@ def google_dashboard(request):
     limit_status = None
     workspace_setting = WorkspaceSetting.get_solo()
     try:
-        client = GoogleWorkspaceClient()
-        users = client.list_users(max_results=500)
+        users = _fetch_google_users()
         stats = _google_workspace_stats(users)
         limit_status = _workspace_limit_status(len(users), workspace_setting)
         try:
@@ -517,6 +698,7 @@ def criar_usuario_google(request):
             _log_operation(request.user, full_email, "google criar usuario", "erro", detalhe)
             messages.error(request, detalhe)
         else:
+            _invalidate_google_cache()
             _log_operation(request.user, full_email, "google criar usuario", "sucesso")
             messages.success(request, f"Usuario Google {full_email} criado com sucesso.")
             return redirect("google-user-list")
@@ -533,6 +715,15 @@ def acao_usuario_google(request, email):
         return redirect("google-user-list")
 
     action = form.cleaned_data["action"]
+    can_manage_email_admin_actions = bool(
+        getattr(getattr(request.user, "profile", None), "can_manage_admin", False)
+    )
+    if action == "delete" and not can_manage_email_admin_actions:
+        messages.error(
+            request,
+            "Apenas usuarios com perfil de admin podem excluir contas de e-mail.",
+        )
+        return redirect("email-list", account=account)
     password_form = EmailPasswordChangeForm(request.POST if action == "change_password" else None)
     if action == "change_password" and not password_form.is_valid():
         messages.error(request, "Informe uma nova senha valida com no minimo 8 caracteres.")
@@ -568,6 +759,7 @@ def acao_usuario_google(request, email):
         _log_operation(request.user, email, label, "erro", detalhe)
         messages.error(request, detalhe)
     else:
+        _invalidate_google_cache()
         _log_operation(request.user, email, label, "sucesso")
         messages.success(request, f"Acao '{label}' executada para {email}.")
     return redirect("google-user-list")
@@ -607,6 +799,7 @@ def criar_email(request, account):
             _log_operation(request.user, full_email, "criado", "erro", detalhe)
             messages.error(request, detalhe)
         else:
+            _invalidate_cpanel_account_cache(selected_account["user"], domain)
             _log_operation(request.user, full_email, "criado", "sucesso", f"Quota: {quota} MB")
             messages.success(request, f"E-mail {full_email} criado com sucesso.")
             return redirect("email-list", account=selected_account["user"])
@@ -666,6 +859,7 @@ def acao_email(request, account, email):
         _log_operation(request.user, full_email, label, "erro", detalhe)
         messages.error(request, detalhe)
     else:
+        _invalidate_cpanel_account_cache(account, domain)
         _log_operation(request.user, full_email, label, "sucesso")
         messages.success(request, f"Acao '{label}' executada para {full_email}.")
     return redirect("email-list", account=account)
@@ -675,14 +869,24 @@ def acao_email(request, account, email):
 @admin_required
 def historico(request):
     logs = EmailLog.objects.select_related("usuario").all()
-    return render(request, "emails/detail.html", {"logs": logs})
+    page_obj, page_query = _paginate_items(request, logs, HISTORY_PER_PAGE)
+    return render(
+        request,
+        "emails/detail.html",
+        {"logs": page_obj.object_list, "page_obj": page_obj, "page_query": page_query},
+    )
 
 
 @require_GET
 @admin_required
 def listar_usuarios(request):
     users = User.objects.select_related("profile").order_by("username")
-    return render(request, "emails/users.html", {"users": users})
+    page_obj, page_query = _paginate_items(request, users, SYSTEM_USERS_PER_PAGE)
+    return render(
+        request,
+        "emails/users.html",
+        {"users": page_obj.object_list, "page_obj": page_obj, "page_query": page_query},
+    )
 
 
 @require_http_methods(["GET", "POST"])

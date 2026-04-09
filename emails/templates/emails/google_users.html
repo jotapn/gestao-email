@@ -1,21 +1,21 @@
 {% extends "emails/base.html" %}
 
-{% block title %}Usuarios Google{% endblock %}
+{% block title %}Usuários Google{% endblock %}
 
 {% block content %}
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
     <div>
-        <h1 class="h3 mb-1">Usuarios Google Workspace</h1>
-        <p class="text-muted mb-0">Dominio: <strong>{{ workspace_domain|default:"nao configurado" }}</strong></p>
+        <h1 class="h3 mb-1">Usuários Google Workspace</h1>
+        <p class="text-muted mb-0">Domínio: <strong>{{ workspace_domain|default:"não configurado" }}</strong></p>
     </div>
     <div class="d-flex gap-2">
         <a href="{% url 'google-dashboard' %}" class="btn btn-outline-secondary">Voltar para dashboard</a>
-        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createGoogleUserModal">Criar usuario</button>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createGoogleUserModal">Criar usuário</button>
     </div>
 </div>
 
 {% if error_message %}
-    <div class="alert alert-warning">Nao foi possivel carregar a lista do Google Workspace.</div>
+    <div class="alert alert-warning">Não foi possível carregar a lista do Google Workspace.</div>
 {% endif %}
 
 <div class="card shadow-sm border-0 mb-4">
@@ -38,7 +38,7 @@
             </div>
         </form>
         <div class="mt-3 text-muted small">
-            {{ filtered_total }} usuario{{ filtered_total|pluralize }} encontrado{{ filtered_total|pluralize }}
+            {{ filtered_total }} usuário{{ filtered_total|pluralize }} encontrado{{ filtered_total|pluralize }}
         </div>
     </div>
 </div>
@@ -47,7 +47,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title fs-5">Criar usuario Google</h2>
+                <h2 class="modal-title fs-5">Criar usuário Google</h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
             </div>
             <form method="post" action="{% url 'google-user-create' %}">
@@ -57,7 +57,7 @@
                         <label for="{{ create_form.nome.id_for_label }}" class="form-label">{{ create_form.nome.label }}</label>
                         <div class="input-group">
                             {{ create_form.nome }}
-                            <span class="input-group-text">@{{ workspace_domain|default:"dominio" }}</span>
+                            <span class="input-group-text">@{{ workspace_domain|default:"domínio" }}</span>
                         </div>
                         {% if create_form.nome.errors %}
                             <div class="text-danger small mt-1">{{ create_form.nome.errors|join:", " }}</div>
@@ -107,19 +107,19 @@
                         <ul class="list-unstyled mt-2 mb-0 small password-rules" data-password-rules data-target-id="{{ create_form.senha.id_for_label }}">
                             <li data-rule="length" class="d-flex align-items-center gap-2 text-danger">
                                 <span data-icon aria-hidden="true">&#9711;</span>
-                                <span>Minimo de 8 caracteres</span>
+                                <span>Mínimo de 8 caracteres</span>
                             </li>
                             <li data-rule="upper" class="d-flex align-items-center gap-2 text-danger">
                                 <span data-icon aria-hidden="true">&#9711;</span>
-                                <span>Letra maiuscula</span>
+                                <span>Letra maiúscula</span>
                             </li>
                             <li data-rule="lower" class="d-flex align-items-center gap-2 text-danger">
                                 <span data-icon aria-hidden="true">&#9711;</span>
-                                <span>Letra minuscula</span>
+                                <span>Letra minúscula</span>
                             </li>
                             <li data-rule="number" class="d-flex align-items-center gap-2 text-danger">
                                 <span data-icon aria-hidden="true">&#9711;</span>
-                                <span>Numero</span>
+                                <span>Número</span>
                             </li>
                             <li data-rule="special" class="d-flex align-items-center gap-2 text-danger">
                                 <span data-icon aria-hidden="true">&#9711;</span>
@@ -133,7 +133,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Criar usuario</button>
+                    <button type="submit" class="btn btn-primary">Criar usuário</button>
                 </div>
             </form>
         </div>
@@ -150,7 +150,7 @@
                         <th>Nome</th>
                         <th>Organizacional</th>
                         <th>Status</th>
-                        <th class="text-end">Acoes</th>
+                        <th class="text-end">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -172,10 +172,10 @@
                                         {% csrf_token %}
                                         {% if item.suspended %}
                                             <input type="hidden" name="action" value="unsuspend_user">
-                                            <button type="submit" class="btn btn-sm btn-outline-success">Reativar usuario</button>
+                                            <button type="submit" class="btn btn-sm btn-outline-success">Reativar usuário</button>
                                         {% else %}
                                             <input type="hidden" name="action" value="suspend_user">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">Suspender usuario</button>
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Suspender usuário</button>
                                         {% endif %}
                                     </form>
                                     <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#googlePasswordModal{{ forloop.counter }}">
@@ -190,7 +190,7 @@
                                     <div class="modal-dialog">
                                         <div class="modal-content">
                                             <div class="modal-header">
-                                                <h2 class="modal-title fs-5">Confirmar exclusao</h2>
+                                                <h2 class="modal-title fs-5">Confirmar exclusão</h2>
                                                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                                             </div>
                                             <div class="modal-body text-start">
@@ -247,19 +247,19 @@
                                                     <ul class="list-unstyled mt-3 mb-0 small password-rules" data-password-rules data-target-id="googlePassword{{ forloop.counter }}">
                                                         <li data-rule="length" class="d-flex align-items-center gap-2 text-danger">
                                                             <span data-icon aria-hidden="true">&#9711;</span>
-                                                            <span>Minimo de 8 caracteres</span>
+                                                            <span>Mínimo de 8 caracteres</span>
                                                         </li>
                                                         <li data-rule="upper" class="d-flex align-items-center gap-2 text-danger">
                                                             <span data-icon aria-hidden="true">&#9711;</span>
-                                                            <span>Letra maiuscula</span>
+                                                            <span>Letra maiúscula</span>
                                                         </li>
                                                         <li data-rule="lower" class="d-flex align-items-center gap-2 text-danger">
                                                             <span data-icon aria-hidden="true">&#9711;</span>
-                                                            <span>Letra minuscula</span>
+                                                            <span>Letra minúscula</span>
                                                         </li>
                                                         <li data-rule="number" class="d-flex align-items-center gap-2 text-danger">
                                                             <span data-icon aria-hidden="true">&#9711;</span>
-                                                            <span>Numero</span>
+                                                            <span>Número</span>
                                                         </li>
                                                         <li data-rule="special" class="d-flex align-items-center gap-2 text-danger">
                                                             <span data-icon aria-hidden="true">&#9711;</span>
@@ -279,7 +279,7 @@
                         </tr>
                     {% empty %}
                         <tr>
-                            <td colspan="5" class="text-center py-4 text-muted">Nenhum usuario encontrado.</td>
+                            <td colspan="5" class="text-center py-4 text-muted">Nenhum usuário encontrado.</td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -287,6 +287,21 @@
         </div>
     </div>
 </div>
+{% if page_obj.paginator.num_pages > 1 %}
+    <nav aria-label="Paginação de usuários Google" class="mt-4">
+        <ul class="pagination justify-content-center mb-0">
+            <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                <a class="page-link" href="?{% if page_query %}{{ page_query }}&{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}">Anterior</a>
+            </li>
+            <li class="page-item disabled">
+                <span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+            </li>
+            <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                <a class="page-link" href="?{% if page_query %}{{ page_query }}&{% endif %}page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}">Próxima</a>
+            </li>
+        </ul>
+    </nav>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}

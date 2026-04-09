@@ -9,7 +9,7 @@
         <p class="text-muted mb-0">
             Conta: <strong>{{ selected_account.user|default:"-" }}</strong>
             <span class="mx-2">|</span>
-            Dominio: <strong>{{ domain|default:"nao configurado" }}</strong>
+            Domínio: <strong>{{ domain|default:"não configurado" }}</strong>
         </p>
     </div>
     <div class="d-flex gap-2">
@@ -21,7 +21,7 @@
 </div>
 
 {% if error_message %}
-    <div class="alert alert-warning">Nao foi possivel carregar a lista do cPanel.</div>
+    <div class="alert alert-warning">Não foi possível carregar a lista do cPanel.</div>
 {% endif %}
 
 <div class="card shadow-sm border-0 mb-4">
@@ -66,7 +66,7 @@
                         <label for="{{ create_form.nome.id_for_label }}" class="form-label">{{ create_form.nome.label }}</label>
                         <div class="input-group">
                             {{ create_form.nome }}
-                            <span class="input-group-text">@{{ domain|default:"dominio" }}</span>
+                            <span class="input-group-text">@{{ domain|default:"domínio" }}</span>
                         </div>
                         {% if create_form.nome.errors %}
                             <div class="text-danger small mt-1">{{ create_form.nome.errors|join:", " }}</div>
@@ -100,23 +100,23 @@
                         </div>
                         <ul class="list-unstyled mt-2 mb-0 small password-rules" data-password-rules data-target-id="{{ create_form.senha.id_for_label }}">
                             <li data-rule="length" class="d-flex align-items-center gap-2 text-danger">
-                                <span data-icon aria-hidden="true">○</span>
-                                <span>Minimo de 8 caracteres</span>
+                                <span data-icon aria-hidden="true">&#9711;</span>
+                                <span>Mínimo de 8 caracteres</span>
                             </li>
                             <li data-rule="upper" class="d-flex align-items-center gap-2 text-danger">
-                                <span data-icon aria-hidden="true">○</span>
-                                <span>Letra maiuscula</span>
+                                <span data-icon aria-hidden="true">&#9711;</span>
+                                <span>Letra maiúscula</span>
                             </li>
                             <li data-rule="lower" class="d-flex align-items-center gap-2 text-danger">
-                                <span data-icon aria-hidden="true">○</span>
-                                <span>Letra minuscula</span>
+                                <span data-icon aria-hidden="true">&#9711;</span>
+                                <span>Letra minúscula</span>
                             </li>
                             <li data-rule="number" class="d-flex align-items-center gap-2 text-danger">
-                                <span data-icon aria-hidden="true">○</span>
-                                <span>Numero</span>
+                                <span data-icon aria-hidden="true">&#9711;</span>
+                                <span>Número</span>
                             </li>
                             <li data-rule="special" class="d-flex align-items-center gap-2 text-danger">
-                                <span data-icon aria-hidden="true">○</span>
+                                <span data-icon aria-hidden="true">&#9711;</span>
                                 <span>Caractere especial</span>
                             </li>
                         </ul>
@@ -154,7 +154,7 @@
                         <th>E-mail</th>
                         <th>Quota usada / total</th>
                         <th>Status</th>
-                        <th class="text-end">Acoes</th>
+                        <th class="text-end">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -177,10 +177,10 @@
                                         <input type="hidden" name="domain" value="{{ domain }}">
                                         {% if item.login_suspended or item.outgoing_suspended or item.incoming_suspended %}
                                             <input type="hidden" name="action" value="unsuspend_user">
-                                            <button type="submit" class="btn btn-sm btn-outline-success">Reativar usuario</button>
+                                            <button type="submit" class="btn btn-sm btn-outline-success">Reativar usuário</button>
                                         {% else %}
                                             <input type="hidden" name="action" value="suspend_user">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">Suspender usuario</button>
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Suspender usuário</button>
                                         {% endif %}
                                     </form>
                                     <button
@@ -191,39 +191,43 @@
                                     >
                                         Alterar senha
                                     </button>
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-outline-dark"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#deleteModal{{ forloop.counter }}"
-                                    >
-                                        Excluir
-                                    </button>
+                                    {% if request.user.profile.can_manage_admin %}
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-outline-dark"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#deleteModal{{ forloop.counter }}"
+                                        >
+                                            Excluir
+                                        </button>
+                                    {% endif %}
                                 </div>
 
-                                <div class="modal fade" id="deleteModal{{ forloop.counter }}" tabindex="-1" aria-hidden="true">
-                                    <div class="modal-dialog">
-                                        <div class="modal-content">
-                                            <div class="modal-header">
-                                                <h2 class="modal-title fs-5">Confirmar exclusao</h2>
-                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-                                            </div>
-                                            <div class="modal-body text-start">
-                                                Deseja realmente excluir <strong>{{ item.full_email }}</strong>?
-                                            </div>
-                                            <div class="modal-footer">
-                                                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
-                                                <form method="post" action="{% url 'email-action' selected_account.user item.full_email %}">
-                                                    {% csrf_token %}
-                                                    <input type="hidden" name="account" value="{{ selected_account.user|default:'' }}">
-                                                    <input type="hidden" name="domain" value="{{ domain }}">
-                                                    <input type="hidden" name="action" value="delete">
-                                                    <button type="submit" class="btn btn-danger">Excluir</button>
-                                                </form>
+                                {% if request.user.profile.can_manage_admin %}
+                                    <div class="modal fade" id="deleteModal{{ forloop.counter }}" tabindex="-1" aria-hidden="true">
+                                        <div class="modal-dialog">
+                                            <div class="modal-content">
+                                                <div class="modal-header">
+                                                    <h2 class="modal-title fs-5">Confirmar exclusão</h2>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                                </div>
+                                                <div class="modal-body text-start">
+                                                    Deseja realmente excluir <strong>{{ item.full_email }}</strong>?
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                                                    <form method="post" action="{% url 'email-action' selected_account.user item.full_email %}">
+                                                        {% csrf_token %}
+                                                        <input type="hidden" name="account" value="{{ selected_account.user|default:'' }}">
+                                                        <input type="hidden" name="domain" value="{{ domain }}">
+                                                        <input type="hidden" name="action" value="delete">
+                                                        <button type="submit" class="btn btn-danger">Excluir</button>
+                                                    </form>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
+                                {% endif %}
 
                                 <div class="modal fade" id="passwordModal{{ forloop.counter }}" tabindex="-1" aria-hidden="true">
                                     <div class="modal-dialog">
@@ -265,23 +269,23 @@
                                                     </div>
                                                     <ul class="list-unstyled mt-3 mb-0 small password-rules" data-password-rules data-target-id="password{{ forloop.counter }}">
                                                         <li data-rule="length" class="d-flex align-items-center gap-2 text-danger">
-                                                            <span data-icon aria-hidden="true">○</span>
-                                                            <span>Minimo de 8 caracteres</span>
+                                                            <span data-icon aria-hidden="true">&#9711;</span>
+                                                            <span>Mínimo de 8 caracteres</span>
                                                         </li>
                                                         <li data-rule="upper" class="d-flex align-items-center gap-2 text-danger">
-                                                            <span data-icon aria-hidden="true">○</span>
-                                                            <span>Letra maiuscula</span>
+                                                            <span data-icon aria-hidden="true">&#9711;</span>
+                                                            <span>Letra maiúscula</span>
                                                         </li>
                                                         <li data-rule="lower" class="d-flex align-items-center gap-2 text-danger">
-                                                            <span data-icon aria-hidden="true">○</span>
-                                                            <span>Letra minuscula</span>
+                                                            <span data-icon aria-hidden="true">&#9711;</span>
+                                                            <span>Letra minúscula</span>
                                                         </li>
                                                         <li data-rule="number" class="d-flex align-items-center gap-2 text-danger">
-                                                            <span data-icon aria-hidden="true">○</span>
-                                                            <span>Numero</span>
+                                                            <span data-icon aria-hidden="true">&#9711;</span>
+                                                            <span>Número</span>
                                                         </li>
                                                         <li data-rule="special" class="d-flex align-items-center gap-2 text-danger">
-                                                            <span data-icon aria-hidden="true">○</span>
+                                                            <span data-icon aria-hidden="true">&#9711;</span>
                                                             <span>Caractere especial</span>
                                                         </li>
                                                     </ul>
@@ -306,6 +310,21 @@
         </div>
     </div>
 </div>
+{% if page_obj.paginator.num_pages > 1 %}
+    <nav aria-label="Paginação de e-mails" class="mt-4">
+        <ul class="pagination justify-content-center mb-0">
+            <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                <a class="page-link" href="?{% if page_query %}{{ page_query }}&{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}">Anterior</a>
+            </li>
+            <li class="page-item disabled">
+                <span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+            </li>
+            <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                <a class="page-link" href="?{% if page_query %}{{ page_query }}&{% endif %}page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}">Próxima</a>
+            </li>
+        </ul>
+    </nav>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -332,7 +351,7 @@
                     item.classList.toggle("text-danger", !valid);
                     item.classList.toggle("text-success", valid);
                     const icon = item.querySelector("[data-icon]");
-                    if (icon) icon.textContent = valid ? "✓" : "○";
+                    if (icon) icon.innerHTML = valid ? "&check;" : "&#9711;";
                 });
             };
 

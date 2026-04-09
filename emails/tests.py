@@ -1,10 +1,12 @@
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth.models import User
+from django.core import mail
 from django.test import TestCase
+from django.test.utils import override_settings
 from django.urls import reverse
 
-from .forms import EmailCreateForm
+from .forms import EmailCreateForm, SystemUserForm
 from .models import EmailLog, WorkspaceSetting
 from .services.cpanel_client import CpanelAPIError, CpanelClient
 from .services.google_workspace_client import (
@@ -18,6 +20,16 @@ class EmailCreateFormTests(TestCase):
         form = EmailCreateForm(data={"nome": "teste@dominio.com", "senha": "12345678", "quota": 100})
         self.assertFalse(form.is_valid())
         self.assertIn("nome", form.errors)
+
+    def test_admin_comum_nao_ve_opcao_admin_do_sistema_no_formulario(self):
+        admin = User.objects.create_user(username="admin_form", password="Senha123!")
+        admin.profile.is_admin = True
+        admin.profile.is_system_admin = False
+        admin.profile.save()
+
+        form = SystemUserForm(current_user=admin)
+
+        self.assertNotIn(("system_admin", "Admin do sistema"), form.fields["role"].choices)
 
 
 class EmailViewsTests(TestCase):
@@ -122,6 +134,18 @@ class EmailViewsTests(TestCase):
         self.assertEqual(response.status_code, 302)
         client_cls.return_value.suspend_user.assert_called_once_with(full_email="contato@cnxtel.com.br")
 
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_password_reset_envia_email_para_usuario_interno(self):
+        self.user.email = "operador@cnxtel.com.br"
+        self.user.save(update_fields=["email"])
+
+        response = self.client.post(reverse("password_reset"), {"email": "operador@cnxtel.com.br"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("password_reset_done"))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("redefini", mail.outbox[0].subject.lower())
+
 
 class CpanelCompositeActionTests(TestCase):
     def setUp(self):
@@ -217,6 +241,26 @@ class CpanelCompositeActionTests(TestCase):
         self.assertTrue(User.objects.filter(username="novo").exists())
         send_mail_mock.assert_called_once()
 
+    def test_admin_nao_pode_criar_usuario_como_admin_do_sistema(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("user-create"),
+            {
+                "username": "bloqueado",
+                "first_name": "Bloqueado",
+                "last_name": "Sistema",
+                "email": "bloqueado@cnxtel.com.br",
+                "password": "Senha123!",
+                "is_active": "on",
+                "role": "system_admin",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(User.objects.filter(username="bloqueado").exists())
+        self.assertContains(response, "system_admin")
+
     def test_admin_salva_limite_workspace(self):
         self.client.force_login(self.system_admin)
         response = self.client.post(
@@ -275,6 +319,35 @@ class CpanelClientTests(TestCase):
 class GoogleWorkspaceClientTests(TestCase):
     @patch("emails.services.google_workspace_client.build")
     @patch("emails.services.google_workspace_client.service_account.Credentials.from_service_account_info")
+    def test_list_users_aceita_credenciais_google_em_variaveis_separadas(self, credentials_mock, build_mock):
+        service = MagicMock()
+        build_mock.return_value = service
+        credentials_mock.return_value = object()
+        service.users.return_value.list.return_value.execute.return_value = {"users": []}
+
+        with patch.multiple(
+            "django.conf.settings",
+            GOOGLE_WORKSPACE_DOMAIN="oratelecom.com.br",
+            GOOGLE_WORKSPACE_ADMIN_EMAIL="padua.costa@oratelecom.com.br",
+            GOOGLE_SERVICE_ACCOUNT_FILE="",
+            GOOGLE_SERVICE_ACCOUNT_JSON="",
+            GOOGLE_SERVICE_ACCOUNT_PROJECT_ID="teste",
+            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID="abc",
+            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n",
+            GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL="bot@teste.iam.gserviceaccount.com",
+            GOOGLE_SERVICE_ACCOUNT_CLIENT_ID="123",
+            GOOGLE_SERVICE_ACCOUNT_TOKEN_URI="https://oauth2.googleapis.com/token",
+            GOOGLE_WORKSPACE_DEFAULT_ORG_UNIT="",
+            GOOGLE_WORKSPACE_LICENSING_ENABLED=False,
+            GOOGLE_WORKSPACE_PRODUCT_ID="",
+            GOOGLE_WORKSPACE_SKU_ID="",
+        ):
+            GoogleWorkspaceClient().list_users(max_results=5)
+
+        credentials_mock.assert_called_once()
+
+    @patch("emails.services.google_workspace_client.build")
+    @patch("emails.services.google_workspace_client.service_account.Credentials.from_service_account_info")
     def test_list_users_aceita_json_em_variavel_de_ambiente(self, credentials_mock, build_mock):
         service = MagicMock()
         build_mock.return_value = service
@@ -287,6 +360,12 @@ class GoogleWorkspaceClientTests(TestCase):
             GOOGLE_WORKSPACE_ADMIN_EMAIL="padua.costa@oratelecom.com.br",
             GOOGLE_SERVICE_ACCOUNT_FILE="",
             GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account","project_id":"teste","private_key_id":"abc","private_key":"-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n","client_email":"bot@teste.iam.gserviceaccount.com","client_id":"123","token_uri":"https://oauth2.googleapis.com/token"}',
+            GOOGLE_SERVICE_ACCOUNT_PROJECT_ID="",
+            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID="",
+            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="",
+            GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL="",
+            GOOGLE_SERVICE_ACCOUNT_CLIENT_ID="",
+            GOOGLE_SERVICE_ACCOUNT_TOKEN_URI="https://oauth2.googleapis.com/token",
             GOOGLE_WORKSPACE_DEFAULT_ORG_UNIT="",
             GOOGLE_WORKSPACE_LICENSING_ENABLED=False,
             GOOGLE_WORKSPACE_PRODUCT_ID="",
@@ -321,6 +400,12 @@ class GoogleWorkspaceClientTests(TestCase):
             GOOGLE_WORKSPACE_ADMIN_EMAIL="padua.costa@oratelecom.com.br",
             GOOGLE_SERVICE_ACCOUNT_FILE="C:/credenciais/google.json",
             GOOGLE_SERVICE_ACCOUNT_JSON="",
+            GOOGLE_SERVICE_ACCOUNT_PROJECT_ID="",
+            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID="",
+            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="",
+            GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL="",
+            GOOGLE_SERVICE_ACCOUNT_CLIENT_ID="",
+            GOOGLE_SERVICE_ACCOUNT_TOKEN_URI="https://oauth2.googleapis.com/token",
             GOOGLE_WORKSPACE_DEFAULT_ORG_UNIT="",
             GOOGLE_WORKSPACE_LICENSING_ENABLED=False,
             GOOGLE_WORKSPACE_PRODUCT_ID="",

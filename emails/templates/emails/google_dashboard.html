@@ -6,7 +6,7 @@
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
     <div>
         <h1 class="h3 mb-1">Google Workspace</h1>
-        <p class="text-muted mb-0">Dominio principal: <strong>{{ workspace_domain|default:"nao configurado" }}</strong></p>
+        <p class="text-muted mb-0">Domínio principal: <strong>{{ workspace_domain|default:"não configurado" }}</strong></p>
     </div>
     <div class="text-muted small">
         Admin autenticado: {{ workspace_admin_email|default:"-" }}
@@ -14,7 +14,7 @@
 </div>
 
 {% if error_message %}
-    <div class="alert alert-warning">Nao foi possivel carregar os dados do Google Workspace.</div>
+    <div class="alert alert-warning">Não foi possível carregar os dados do Google Workspace.</div>
 {% endif %}
 
 <div class="row g-4">
@@ -24,7 +24,7 @@
                 <div class="d-flex justify-content-between align-items-start mb-3">
                     <div>
                         <h2 class="h5 mb-1">{{ workspace_domain|default:"Google Workspace" }}</h2>
-                        <div class="text-muted small">Usuarios do Google Workspace</div>
+                        <div class="text-muted small">Usuários do Google Workspace</div>
                     </div>
                     <span class="badge text-bg-primary">Google</span>
                 </div>
@@ -51,17 +51,17 @@
                 {% if limit_status %}
                     {% if limit_status.reached %}
                         <div class="alert alert-danger py-2 small">
-                            Limite do Google Workspace atingido: {{ limit_status.used }}/{{ limit_status.limit }} usuarios.
+                            Limite do Google Workspace atingido: {{ limit_status.used }}/{{ limit_status.limit }} usuários.
                         </div>
                     {% elif limit_status.warning %}
                         <div class="alert alert-warning py-2 small">
-                            Atencao: restam {{ limit_status.remaining }} vaga{{ limit_status.remaining|pluralize }} para atingir o limite do Google Workspace.
+                            Atenção: restam {{ limit_status.remaining }} vaga{{ limit_status.remaining|pluralize }} para atingir o limite do Google Workspace.
                         </div>
                     {% endif %}
                 {% endif %}
                 <div class="mt-auto d-grid gap-2">
-                    <a href="{% url 'google-user-list' %}" class="btn btn-primary">Abrir usuarios</a>
-                    <a href="{% url 'google-user-create' %}" class="btn btn-outline-secondary">Criar usuario</a>
+                    <a href="{% url 'google-user-list' %}" class="btn btn-primary">Abrir usuários</a>
+                    <a href="{% url 'google-user-create' %}" class="btn btn-outline-secondary">Criar usuário</a>
                 </div>
             </div>
         </div>

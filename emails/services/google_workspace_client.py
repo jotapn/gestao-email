@@ -36,20 +36,64 @@ class GoogleWorkspaceClient:
         self.admin_email = settings.GOOGLE_WORKSPACE_ADMIN_EMAIL
         self.service_account_file = settings.GOOGLE_SERVICE_ACCOUNT_FILE
         self.service_account_json = settings.GOOGLE_SERVICE_ACCOUNT_JSON
+        self.service_account_project_id = settings.GOOGLE_SERVICE_ACCOUNT_PROJECT_ID
+        self.service_account_private_key_id = settings.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID
+        self.service_account_private_key = settings.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+        self.service_account_client_email = settings.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL
+        self.service_account_client_id = settings.GOOGLE_SERVICE_ACCOUNT_CLIENT_ID
+        self.service_account_token_uri = settings.GOOGLE_SERVICE_ACCOUNT_TOKEN_URI
         self.default_org_unit = settings.GOOGLE_WORKSPACE_DEFAULT_ORG_UNIT
         self.licensing_enabled = settings.GOOGLE_WORKSPACE_LICENSING_ENABLED
         self.product_id = settings.GOOGLE_WORKSPACE_PRODUCT_ID
         self.sku_id = settings.GOOGLE_WORKSPACE_SKU_ID
 
-        if not self.domain or not self.admin_email or not (self.service_account_json or self.service_account_file):
+        if not self.domain or not self.admin_email or not self._has_service_account_source():
             raise GoogleWorkspaceAPIError(
-                "Configure GOOGLE_WORKSPACE_DOMAIN, GOOGLE_WORKSPACE_ADMIN_EMAIL e GOOGLE_SERVICE_ACCOUNT_JSON ou GOOGLE_SERVICE_ACCOUNT_FILE no .env."
+                "Configure GOOGLE_WORKSPACE_DOMAIN, GOOGLE_WORKSPACE_ADMIN_EMAIL e uma credencial Google via GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_SERVICE_ACCOUNT_FILE ou variaveis separadas."
             )
+
+    def _has_service_account_source(self) -> bool:
+        if self.service_account_json or self.service_account_file:
+            return True
+        return all(
+            [
+                self.service_account_project_id,
+                self.service_account_private_key_id,
+                self.service_account_private_key,
+                self.service_account_client_email,
+                self.service_account_client_id,
+                self.service_account_token_uri,
+            ]
+        )
+
+    def _service_account_info_from_env(self) -> dict[str, str]:
+        return {
+            "type": "service_account",
+            "project_id": self.service_account_project_id,
+            "private_key_id": self.service_account_private_key_id,
+            "private_key": self.service_account_private_key.replace("\\n", "\n"),
+            "client_email": self.service_account_client_email,
+            "client_id": self.service_account_client_id,
+            "token_uri": self.service_account_token_uri,
+        }
 
     def _build_credentials(self, scopes: tuple[str, ...]):
         try:
             if self.service_account_json:
                 info = json.loads(self.service_account_json)
+                return service_account.Credentials.from_service_account_info(
+                    info,
+                    scopes=list(scopes),
+                    subject=self.admin_email,
+                )
+            if (
+                self.service_account_project_id
+                and self.service_account_private_key_id
+                and self.service_account_private_key
+                and self.service_account_client_email
+                and self.service_account_client_id
+            ):
+                info = self._service_account_info_from_env()
                 return service_account.Credentials.from_service_account_info(
                     info,
                     scopes=list(scopes),
@@ -104,15 +148,35 @@ class GoogleWorkspaceClient:
 
     def list_users(self, max_results: int = 50, query: str | None = None) -> list[GoogleWorkspaceUser]:
         service = self._directory_service()
+        page_size = min(max_results, 500) if max_results else 500
         params: dict[str, Any] = {
             "customer": "my_customer",
             "orderBy": "email",
-            "maxResults": max_results,
+            "maxResults": page_size,
         }
         if query:
             params["query"] = query
-        response = self._execute(service.users().list(**params))
-        return [self._normalize_user(item) for item in (response.get("users") or [])]
+
+        users: list[GoogleWorkspaceUser] = []
+        next_page_token: str | None = None
+
+        while True:
+            page_params = dict(params)
+            if next_page_token:
+                page_params["pageToken"] = next_page_token
+
+            response = self._execute(service.users().list(**page_params))
+            users.extend(
+                self._normalize_user(item)
+                for item in (response.get("users") or [])
+            )
+
+            if max_results and len(users) >= max_results:
+                return users[:max_results]
+
+            next_page_token = response.get("nextPageToken")
+            if not next_page_token:
+                return users
 
     def get_user(self, email: str) -> GoogleWorkspaceUser:
         service = self._directory_service()

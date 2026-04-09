@@ -1,5 +1,10 @@
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.forms import (
+    AuthenticationForm,
+    PasswordChangeForm,
+    PasswordResetForm,
+    SetPasswordForm,
+)
 from django.contrib.auth.models import User
 
 from .models import WorkspaceSetting
@@ -70,6 +75,44 @@ class LoginForm(AuthenticationForm):
     )
 
 
+class StyledPasswordResetForm(PasswordResetForm):
+    email = forms.EmailField(
+        label="E-mail",
+        widget=forms.EmailInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "voce@empresa.com.br",
+                "autocomplete": "email",
+            }
+        ),
+    )
+
+
+class StyledSetPasswordForm(SetPasswordForm):
+    new_password1 = forms.CharField(
+        label="Nova senha",
+        strip=False,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "Digite a nova senha",
+                "autocomplete": "new-password",
+            }
+        ),
+    )
+    new_password2 = forms.CharField(
+        label="Confirme a nova senha",
+        strip=False,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "Repita a nova senha",
+                "autocomplete": "new-password",
+            }
+        ),
+    )
+
+
 class SystemUserForm(forms.ModelForm):
     ROLE_CHOICES = (
         ("operator", "Operador"),
@@ -99,6 +142,10 @@ class SystemUserForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.current_user = kwargs.pop("current_user", None)
         super().__init__(*args, **kwargs)
+        if not getattr(getattr(self.current_user, "profile", None), "is_system_admin", False):
+            self.fields["role"].choices = tuple(
+                choice for choice in self.ROLE_CHOICES if choice[0] != "system_admin"
+            )
         if self.instance.pk:
             self.fields["password"].help_text = "Preencha apenas se quiser redefinir a senha."
             self.fields["role"].initial = getattr(self.instance.profile, "role", "operator")
@@ -114,6 +161,12 @@ class SystemUserForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if (
+            self.current_user
+            and cleaned_data.get("role") == "system_admin"
+            and not getattr(getattr(self.current_user, "profile", None), "is_system_admin", False)
+        ):
+            self.add_error("role", "Apenas admins do sistema podem atribuir esse perfil.")
         if self.current_user and self.instance.pk == self.current_user.pk and not cleaned_data.get("is_active", True):
             self.add_error("is_active", "Voce nao pode inativar seu proprio usuario.")
         if (
@@ -138,6 +191,59 @@ class SystemUserForm(forms.ModelForm):
             profile.is_system_admin = role == "system_admin"
             profile.save()
         return user
+
+
+class SelfProfileForm(forms.ModelForm):
+    username = forms.CharField(
+        label="Usuario",
+        disabled=True,
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control", "readonly": True}),
+    )
+    first_name = forms.CharField(
+        label="Nome",
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    last_name = forms.CharField(
+        label="Sobrenome",
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    email = forms.EmailField(
+        label="E-mail",
+        required=False,
+        widget=forms.EmailInput(attrs={"class": "form-control"}),
+    )
+
+    class Meta:
+        model = User
+        fields = ("username", "first_name", "last_name", "email")
+
+
+class StyledPasswordChangeForm(PasswordChangeForm):
+    old_password = forms.CharField(
+        label="Senha atual",
+        strip=False,
+        widget=forms.PasswordInput(
+            attrs={"class": "form-control", "autocomplete": "current-password"}
+        ),
+    )
+    new_password1 = forms.CharField(
+        label="Nova senha",
+        strip=False,
+        help_text=PASSWORD_RULES_HELP,
+        widget=forms.PasswordInput(
+            attrs={"class": "form-control", "autocomplete": "new-password"}
+        ),
+    )
+    new_password2 = forms.CharField(
+        label="Confirme a nova senha",
+        strip=False,
+        widget=forms.PasswordInput(
+            attrs={"class": "form-control", "autocomplete": "new-password"}
+        ),
+    )
 
 
 class GoogleWorkspaceUserCreateForm(forms.Form):

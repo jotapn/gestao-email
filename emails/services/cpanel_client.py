@@ -5,6 +5,7 @@ from typing import Any
 import requests
 from django.conf import settings
 from requests import RequestException
+from requests.adapters import HTTPAdapter
 
 try:
     from urllib3 import disable_warnings
@@ -19,6 +20,8 @@ class CpanelAPIError(Exception):
 
 
 class CpanelClient:
+    _shared_session: requests.Session | None = None
+
     def __init__(self, cpanel_user: str | None = None, domain: str | None = None) -> None:
         self.timeout = settings.REQUEST_TIMEOUT
 
@@ -65,7 +68,7 @@ class CpanelClient:
         verify_ssl: bool = True,
     ) -> dict[str, Any]:
         try:
-            response = requests.get(
+            response = self._get_session().get(
                 url,
                 params=params or {},
                 headers=headers,
@@ -81,6 +84,16 @@ class CpanelClient:
             raise CpanelAPIError("Falha na comunicacao com o servidor.") from exc
         except ValueError as exc:
             raise CpanelAPIError("O servidor retornou uma resposta JSON invalida.") from exc
+
+    @classmethod
+    def _get_session(cls) -> requests.Session:
+        if cls._shared_session is None:
+            session = requests.Session()
+            adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20)
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
+            cls._shared_session = session
+        return cls._shared_session
 
     def _whm_get(
         self,

@@ -10,7 +10,7 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     is_admin = models.BooleanField(default=False)
     is_system_admin = models.BooleanField(default=False)
-    criado_em = models.DateTimeField(auto_now_add=True)
+    criado_em = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
         verbose_name = "perfil de usuario"

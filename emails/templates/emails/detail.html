@@ -1,12 +1,12 @@
 {% extends "emails/base.html" %}
 
-{% block title %}Historico{% endblock %}
+{% block title %}Histórico{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h1 class="h3 mb-1">Historico de operacoes</h1>
-        <p class="text-muted mb-0">Ultimas interacoes registradas pelos usuarios do sistema.</p>
+        <h1 class="h3 mb-1">Histórico de operações</h1>
+        <p class="text-muted mb-0">Últimas interações registradas pelos usuários do sistema.</p>
     </div>
 </div>
 
@@ -15,9 +15,9 @@
         <table class="table table-striped align-middle mb-0">
             <thead class="table-light">
                 <tr>
-                    <th>Usuario</th>
+                    <th>Usuário</th>
                     <th>E-mail</th>
-                    <th>Acao</th>
+                    <th>Ação</th>
                     <th>Status</th>
                     <th>Detalhe</th>
                     <th>Criado em</th>
@@ -41,11 +41,26 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="6" class="text-center py-4 text-muted">Nenhum registro disponivel.</td>
+                        <td colspan="6" class="text-center py-4 text-muted">Nenhum registro disponível.</td>
                     </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
+{% if page_obj.paginator.num_pages > 1 %}
+    <nav aria-label="Paginação do histórico" class="mt-4">
+        <ul class="pagination justify-content-center mb-0">
+            <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                <a class="page-link" href="?{% if page_query %}{{ page_query }}&{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}">Anterior</a>
+            </li>
+            <li class="page-item disabled">
+                <span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+            </li>
+            <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                <a class="page-link" href="?{% if page_query %}{{ page_query }}&{% endif %}page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}">Próxima</a>
+            </li>
+        </ul>
+    </nav>
+{% endif %}
 {% endblock %}

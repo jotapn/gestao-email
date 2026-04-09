@@ -1,14 +1,14 @@
 {% extends "emails/base.html" %}
 
-{% block title %}Usuarios{% endblock %}
+{% block title %}Usuários{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h1 class="h3 mb-1">Usuarios do sistema</h1>
-        <p class="text-muted mb-0">Admins e admin do sistema podem criar, editar e inativar usuarios.</p>
+        <h1 class="h3 mb-1">Usuários do sistema</h1>
+        <p class="text-muted mb-0">Admins e admin do sistema podem criar, editar e inativar usuários.</p>
     </div>
-    <a href="{% url 'user-create' %}" class="btn btn-primary">Novo usuario</a>
+    <a href="{% url 'user-create' %}" class="btn btn-primary">Novo usuário</a>
 </div>
 
 <div class="card border-0 shadow-sm">
@@ -16,12 +16,12 @@
         <table class="table table-striped align-middle mb-0">
             <thead class="table-light">
                 <tr>
-                    <th>Usuario</th>
+                    <th>Usuário</th>
                     <th>Nome</th>
                     <th>E-mail</th>
                     <th>Perfil</th>
                     <th>Status</th>
-                    <th class="text-end">Acoes</th>
+                    <th class="text-end">Ações</th>
                 </tr>
             </thead>
             <tbody>
@@ -52,11 +52,26 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="6" class="text-center py-4 text-muted">Nenhum usuario cadastrado.</td>
+                        <td colspan="6" class="text-center py-4 text-muted">Nenhum usuário cadastrado.</td>
                     </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
+{% if page_obj.paginator.num_pages > 1 %}
+    <nav aria-label="Paginação de usuários do sistema" class="mt-4">
+        <ul class="pagination justify-content-center mb-0">
+            <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                <a class="page-link" href="?{% if page_query %}{{ page_query }}&{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}">Anterior</a>
+            </li>
+            <li class="page-item disabled">
+                <span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+            </li>
+            <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                <a class="page-link" href="?{% if page_query %}{{ page_query }}&{% endif %}page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}">Próxima</a>
+            </li>
+        </ul>
+    </nav>
+{% endif %}
 {% endblock %}

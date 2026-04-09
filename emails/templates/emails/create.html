@@ -8,7 +8,7 @@
         <div class="card border-0 shadow-sm">
             <div class="card-body p-4">
                 <h1 class="h3 mb-3">Criar nova conta</h1>
-                <p class="text-muted">Dominio usado: <strong>{{ domain|default:"nao configurado" }}</strong></p>
+                <p class="text-muted">Domínio usado: <strong>{{ domain|default:"não configurado" }}</strong></p>
                 {% if selected_account %}
                     <p class="text-muted">Conta cPanel: <strong>{{ selected_account.user }}</strong></p>
                 {% endif %}
@@ -34,19 +34,19 @@
                         <ul class="list-unstyled mt-2 mb-0 small password-rules" data-password-rules data-target-id="{{ form.senha.id_for_label }}">
                             <li data-rule="length" class="d-flex align-items-center gap-2 text-danger">
                                 <span data-icon aria-hidden="true">○</span>
-                                <span>Minimo de 8 caracteres</span>
+                                <span>Mínimo de 8 caracteres</span>
                             </li>
                             <li data-rule="upper" class="d-flex align-items-center gap-2 text-danger">
                                 <span data-icon aria-hidden="true">○</span>
-                                <span>Letra maiuscula</span>
+                                <span>Letra maiúscula</span>
                             </li>
                             <li data-rule="lower" class="d-flex align-items-center gap-2 text-danger">
                                 <span data-icon aria-hidden="true">○</span>
-                                <span>Letra minuscula</span>
+                                <span>Letra minúscula</span>
                             </li>
                             <li data-rule="number" class="d-flex align-items-center gap-2 text-danger">
                                 <span data-icon aria-hidden="true">○</span>
-                                <span>Numero</span>
+                                <span>Número</span>
                             </li>
                             <li data-rule="special" class="d-flex align-items-center gap-2 text-danger">
                                 <span data-icon aria-hidden="true">○</span>
