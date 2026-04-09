@@ -1,0 +1,10 @@
+.git
+.gitignore
+.venv
+.venv_clean
+__pycache__
+*.py[cod]
+db.sqlite3
+staticfiles
+.env
+assets/service_account.json

@@ -70,8 +70,15 @@ As variaveis abaixo cobrem os modos suportados pelo projeto. Nem todas sao obrig
 
 ```env
 SECRET_KEY=troque-esta-chave
-DEBUG=True
-ALLOWED_HOSTS=127.0.0.1,localhost
+DEBUG=False
+ALLOWED_HOSTS=127.0.0.1,localhost,seu-dominio.com.br
+CSRF_TRUSTED_ORIGINS=https://seu-dominio.com.br
+SECURE_SSL_REDIRECT=True
+SESSION_COOKIE_SECURE=True
+CSRF_COOKIE_SECURE=True
+SECURE_HSTS_SECONDS=3600
+SECURE_HSTS_INCLUDE_SUBDOMAINS=True
+SECURE_HSTS_PRELOAD=False
 REQUEST_TIMEOUT=30
 ```
 
@@ -81,6 +88,7 @@ Por padrao, o projeto usa SQLite.
 
 ```env
 DB_ENGINE=sqlite
+SQLITE_PATH=/app/data/db.sqlite3
 ```
 
 Para MySQL:
@@ -218,6 +226,31 @@ python manage.py runserver
 python manage.py test
 python manage.py test_google_workspace
 ```
+
+## Deploy com Docker
+
+Arquivos adicionados para deploy:
+
+- `Dockerfile`
+- `docker-compose.yml`
+- `entrypoint.sh`
+- `.dockerignore`
+
+Fluxo basico:
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+O container:
+
+- executa `migrate` ao iniciar
+- executa `collectstatic`
+- sobe a aplicacao com `gunicorn`
+- serve arquivos estaticos com `whitenoise`
+
+Para uso com SQLite em container, o `docker-compose.yml` ja aponta `SQLITE_PATH=/app/data/db.sqlite3` com volume persistente.
 
 ## Observacoes operacionais
 
