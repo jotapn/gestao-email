@@ -222,8 +222,8 @@ class CpanelCompositeActionTests(TestCase):
         response = self.client.get(reverse("workspace-settings"))
         self.assertEqual(response.status_code, 302)
 
-    @patch("emails.views.send_mail")
-    def test_admin_cria_usuario_e_dispara_email(self, send_mail_mock):
+    @patch("emails.views.EmailMultiAlternatives")
+    def test_admin_cria_usuario_e_dispara_email(self, email_mock):
         self.client.force_login(self.admin)
         response = self.client.post(
             reverse("user-create"),
@@ -239,7 +239,9 @@ class CpanelCompositeActionTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         self.assertTrue(User.objects.filter(username="novo").exists())
-        send_mail_mock.assert_called_once()
+        email_mock.assert_called_once()
+        email_mock.return_value.attach_alternative.assert_called_once()
+        email_mock.return_value.send.assert_called_once()
 
     def test_admin_nao_pode_criar_usuario_como_admin_do_sistema(self):
         self.client.force_login(self.admin)

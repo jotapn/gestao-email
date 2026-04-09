@@ -66,12 +66,21 @@ class GoogleWorkspaceClient:
             ]
         )
 
+    @staticmethod
+    def _normalize_private_key(key: str) -> str:
+        # Replace literal \n with real newlines
+        key = key.replace("\\n", "\n")
+        # Ensure PEM markers are on their own lines
+        key = key.replace("-----BEGIN PRIVATE KEY----- ", "-----BEGIN PRIVATE KEY-----\n")
+        key = key.replace(" -----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
+        return key.strip()
+
     def _service_account_info_from_env(self) -> dict[str, str]:
         return {
             "type": "service_account",
             "project_id": self.service_account_project_id,
             "private_key_id": self.service_account_private_key_id,
-            "private_key": self.service_account_private_key.replace("\\n", "\n"),
+            "private_key": self._normalize_private_key(self.service_account_private_key),
             "client_email": self.service_account_client_email,
             "client_id": self.service_account_client_id,
             "token_uri": self.service_account_token_uri,
@@ -81,6 +90,8 @@ class GoogleWorkspaceClient:
         try:
             if self.service_account_json:
                 info = json.loads(self.service_account_json)
+                if "private_key" in info:
+                    info["private_key"] = self._normalize_private_key(info["private_key"])
                 return service_account.Credentials.from_service_account_info(
                     info,
                     scopes=list(scopes),
