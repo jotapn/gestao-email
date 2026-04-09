@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from django.conf import settings
 from google.oauth2 import service_account
+
+logger = logging.getLogger(__name__)
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -124,8 +127,16 @@ class GoogleWorkspaceClient:
                 f"Nao foi possivel ler o arquivo da service account: {exc}"
             ) from exc
         except Exception as exc:  # pragma: no cover
+            pk_raw = self.service_account_private_key
+            pk_debug = (
+                f"pk_len={len(pk_raw)}, "
+                f"starts={pk_raw[:28]!r}, "
+                f"has_backslash_n={chr(92) + 'n' in pk_raw}, "
+                f"has_real_newline={chr(10) in pk_raw}, "
+                f"source={'json' if self.service_account_json else 'env_vars' if pk_raw else 'file'}"
+            )
             raise GoogleWorkspaceAPIError(
-                f"Nao foi possivel carregar as credenciais Google: {exc}"
+                f"Nao foi possivel carregar as credenciais Google: {exc} [{pk_debug}]"
             ) from exc
 
     def _directory_service(self):

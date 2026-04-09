@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export TEST_KEY='-----BEGIN PRIVATE KEY-----\\\\nMIIEvQIBADANBgk\\\\n-----END PRIVATE KEY-----\\\\n')",
+      "Bash(python)",
+      "Bash(python test_key.py)"
+    ]
+  }
+}
