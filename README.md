@@ -243,6 +243,8 @@ docker compose build
 docker compose up -d
 ```
 
+A aplicacao sobe exposta na porta `8001`.
+
 O container:
 
 - executa `migrate` ao iniciar
