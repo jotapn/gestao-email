@@ -79,11 +79,18 @@ class GoogleWorkspaceClient:
         return key.strip()
 
     def _service_account_info_from_env(self) -> dict[str, str]:
+        pk = self._normalize_private_key(self.service_account_private_key)
+        logger.warning(
+            "PK after normalize: len=%d, has_real_nl=%s, has_literal_bsn=%s, "
+            "starts=%r, ends=%r",
+            len(pk), chr(10) in pk, (chr(92) + "n") in pk,
+            pk[:35], pk[-35:],
+        )
         return {
             "type": "service_account",
             "project_id": self.service_account_project_id,
             "private_key_id": self.service_account_private_key_id,
-            "private_key": self._normalize_private_key(self.service_account_private_key),
+            "private_key": pk,
             "client_email": self.service_account_client_email,
             "client_id": self.service_account_client_id,
             "token_uri": self.service_account_token_uri,
