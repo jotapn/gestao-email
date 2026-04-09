@@ -8,7 +8,8 @@ from django.contrib import messages
 from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives, send_mail
+from django.template.loader import render_to_string
 from django.core.paginator import EmptyPage, Paginator
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -437,22 +438,31 @@ def _send_user_created_email(request, user: User, raw_password: str) -> None:
         return
 
     login_url = request.build_absolute_uri(reverse("login"))
+    full_name = user.get_full_name() or user.username
     subject = "Seu acesso ao sistema foi criado"
-    message = (
-        f"Ola {user.get_full_name() or user.username},\n\n"
+    context = {
+        "full_name": full_name,
+        "username": user.username,
+        "password": raw_password,
+        "login_url": login_url,
+    }
+    text_message = (
+        f"Ola {full_name},\n\n"
         f"Seu acesso ao sistema foi criado.\n\n"
         f"Usuario: {user.username}\n"
         f"Senha inicial: {raw_password}\n"
         f"Login: {login_url}\n\n"
         "Recomendamos alterar sua senha no primeiro acesso."
     )
-    send_mail(
+    html_message = render_to_string("emails/user_created_email.html", context)
+    email = EmailMultiAlternatives(
         subject=subject,
-        message=message,
+        body=text_message,
         from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-        fail_silently=False,
+        to=[user.email],
     )
+    email.attach_alternative(html_message, "text/html")
+    email.send(fail_silently=False)
 
 
 @require_http_methods(["GET", "POST"])
