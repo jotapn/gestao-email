@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass
 from typing import Any
 
 from django.conf import settings
 from google.oauth2 import service_account
-
-logger = logging.getLogger(__name__)
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -71,26 +68,18 @@ class GoogleWorkspaceClient:
 
     @staticmethod
     def _normalize_private_key(key: str) -> str:
-        # Replace literal \n with real newlines
+        # Coolify double-escapes: \\n → replace first
+        key = key.replace("\\\\n", "\n")
+        # Then handle single-escaped \n
         key = key.replace("\\n", "\n")
-        # Ensure PEM markers are on their own lines
-        key = key.replace("-----BEGIN PRIVATE KEY----- ", "-----BEGIN PRIVATE KEY-----\n")
-        key = key.replace(" -----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
         return key.strip()
 
     def _service_account_info_from_env(self) -> dict[str, str]:
-        pk = self._normalize_private_key(self.service_account_private_key)
-        logger.warning(
-            "PK after normalize: len=%d, has_real_nl=%s, has_literal_bsn=%s, "
-            "starts=%r, ends=%r",
-            len(pk), chr(10) in pk, (chr(92) + "n") in pk,
-            pk[:35], pk[-35:],
-        )
         return {
             "type": "service_account",
             "project_id": self.service_account_project_id,
             "private_key_id": self.service_account_private_key_id,
-            "private_key": pk,
+            "private_key": self._normalize_private_key(self.service_account_private_key),
             "client_email": self.service_account_client_email,
             "client_id": self.service_account_client_id,
             "token_uri": self.service_account_token_uri,
@@ -134,16 +123,8 @@ class GoogleWorkspaceClient:
                 f"Nao foi possivel ler o arquivo da service account: {exc}"
             ) from exc
         except Exception as exc:  # pragma: no cover
-            pk_raw = self.service_account_private_key
-            pk_debug = (
-                f"pk_len={len(pk_raw)}, "
-                f"starts={pk_raw[:28]!r}, "
-                f"has_backslash_n={chr(92) + 'n' in pk_raw}, "
-                f"has_real_newline={chr(10) in pk_raw}, "
-                f"source={'json' if self.service_account_json else 'env_vars' if pk_raw else 'file'}"
-            )
             raise GoogleWorkspaceAPIError(
-                f"Nao foi possivel carregar as credenciais Google: {exc} [{pk_debug}]"
+                f"Nao foi possivel carregar as credenciais Google: {exc}"
             ) from exc
 
     def _directory_service(self):
