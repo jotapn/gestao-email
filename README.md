@@ -71,13 +71,15 @@ As variaveis abaixo cobrem os modos suportados pelo projeto. Nem todas sao obrig
 ```env
 SECRET_KEY=troque-esta-chave
 DEBUG=False
-ALLOWED_HOSTS=127.0.0.1,localhost,seu-dominio.com.br
-CSRF_TRUSTED_ORIGINS=https://seu-dominio.com.br
-SECURE_SSL_REDIRECT=True
-SESSION_COOKIE_SECURE=True
-CSRF_COOKIE_SECURE=True
-SECURE_HSTS_SECONDS=3600
-SECURE_HSTS_INCLUDE_SUBDOMAINS=True
+ALLOWED_HOSTS=127.0.0.1,localhost,intranet.seu-dominio.local,10.0.0.15
+CSRF_TRUSTED_ORIGINS=http://intranet.seu-dominio.local,http://10.0.0.15
+APP_PORT=8001
+USE_PROXY_SSL_HEADER=False
+SECURE_SSL_REDIRECT=False
+SESSION_COOKIE_SECURE=False
+CSRF_COOKIE_SECURE=False
+SECURE_HSTS_SECONDS=0
+SECURE_HSTS_INCLUDE_SUBDOMAINS=False
 SECURE_HSTS_PRELOAD=False
 REQUEST_TIMEOUT=30
 ```
@@ -244,6 +246,19 @@ docker compose up -d
 ```
 
 A aplicacao sobe exposta na porta `8001`.
+
+### Deploy em intranet via Coolify
+
+Para uso em intranet da empresa, via HTTP e hospedado no Coolify:
+
+- mantenha `SECURE_SSL_REDIRECT=False`
+- mantenha `SESSION_COOKIE_SECURE=False`
+- mantenha `CSRF_COOKIE_SECURE=False`
+- mantenha `SECURE_HSTS_SECONDS=0`
+- use `CSRF_TRUSTED_ORIGINS` com enderecos `http://...`
+- ajuste `ALLOWED_HOSTS` com hostname interno e IP da intranet
+- cadastre as variaveis no painel do Coolify; o `docker-compose.yml` nao depende mais de `env_file: .env`
+- configure no Coolify a porta publica apontando para a porta interna `8001`
 
 O container:
 

@@ -3,10 +3,8 @@ services:
     build: .
     container_name: email_gestao_web
     restart: unless-stopped
-    env_file:
-      - .env
     ports:
-      - "8001:8001"
+      - "${APP_PORT:-8001}:${APP_PORT:-8001}"
     volumes:
       - sqlite_data:/app/data
       - static_data:/app/staticfiles
@@ -14,7 +12,8 @@ services:
     environment:
       DB_ENGINE: ${DB_ENGINE:-sqlite}
       SQLITE_PATH: /app/data/db.sqlite3
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8001 --workers 3 --timeout 120
+      APP_PORT: ${APP_PORT:-8001}
+    command: sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:${APP_PORT:-8001} --workers 3 --timeout 120"
 
 volumes:
   sqlite_data:
