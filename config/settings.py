@@ -148,6 +148,14 @@ CPANEL_TOKEN = config("CPANEL_TOKEN", default="")
 CPANEL_DOMAIN = config("CPANEL_DOMAIN", default="")
 CPANEL_VERIFY_SSL = env_bool("CPANEL_VERIFY_SSL", True)
 REQUEST_TIMEOUT = config("REQUEST_TIMEOUT", default=30, cast=int)
+CAPITAL_MOBILE_SMS_ENDPOINT = config(
+    "CAPITAL_MOBILE_SMS_ENDPOINT",
+    default="https://portal.capitalmobile.com.br/post/index.php",
+)
+CAPITAL_MOBILE_SMS_USER = config("CAPITAL_MOBILE_SMS_USER", default="")
+CAPITAL_MOBILE_SMS_PASSWORD = config("CAPITAL_MOBILE_SMS_PASSWORD", default="")
+CAPITAL_MOBILE_SMS_COOKIE = config("CAPITAL_MOBILE_SMS_COOKIE", default="")
+CAPITAL_MOBILE_SMS_MAX_LENGTH = config("CAPITAL_MOBILE_SMS_MAX_LENGTH", default=160, cast=int)
 
 EMAIL_BACKEND = config("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 EMAIL_HOST = config("EMAIL_HOST", default="")

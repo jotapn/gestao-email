@@ -1,6 +1,7 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.core.cache import cache
@@ -31,6 +32,7 @@ from .forms import (
 from .models import EmailLog, WorkspaceSetting
 from .services.cpanel_client import CpanelAPIError, CpanelClient
 from .services.google_workspace_client import GoogleWorkspaceAPIError, GoogleWorkspaceClient
+from .services.sms_client import CapitalMobileSMSClient, SMSAPIError
 
 logger = logging.getLogger("emails")
 ACCOUNT_STATS_MAX_WORKERS = 8
@@ -77,9 +79,17 @@ def _log_operation(user, email: str, acao: str, status: str, detalhe: str = "") 
 
 
 def _friendly_error(exc: Exception) -> str:
-    if isinstance(exc, (CpanelAPIError, GoogleWorkspaceAPIError)):
+    if isinstance(exc, (CpanelAPIError, GoogleWorkspaceAPIError, SMSAPIError)):
         return str(exc)
     return "Nao foi possivel concluir a operacao no servidor."
+
+
+def _email_access_url(domain: str) -> str:
+    normalized_domain = (domain or "").strip().lower()
+    workspace_domain = (settings.GOOGLE_WORKSPACE_DOMAIN or "").strip().lower()
+    if normalized_domain and workspace_domain and normalized_domain == workspace_domain:
+        return "https://mail.google.com/"
+    return f"https://webmail.{normalized_domain}"
 
 
 def _cache_get_or_set(cache_key: str, timeout: int, factory):
@@ -124,6 +134,92 @@ def _get_page_base_query(request, page_param: str = "page") -> str:
     query = request.GET.copy()
     query.pop(page_param, None)
     return query.urlencode()
+
+
+def _redirect_email_list_with_filters(account: str, request) -> str:
+    params = {}
+    for key in ("q", "status", "page", "sort", "dir"):
+        value = (request.POST.get(key) or "").strip()
+        if value:
+            params[key] = value
+
+    base_url = reverse("email-list", kwargs={"account": account})
+    if not params:
+        return base_url
+    return f"{base_url}?{urlencode(params)}"
+
+
+def _redirect_google_user_list_with_filters(request) -> str:
+    params = {}
+    for key in ("q", "status", "page", "sort", "dir"):
+        value = (request.POST.get(key) or "").strip()
+        if value:
+            params[key] = value
+
+    base_url = reverse("google-user-list")
+    if not params:
+        return base_url
+    return f"{base_url}?{urlencode(params)}"
+
+
+def _toggle_sort_direction(current_sort: str, current_dir: str, next_sort: str) -> str:
+    if current_sort == next_sort and current_dir == "asc":
+        return "desc"
+    return "asc"
+
+
+def _build_sort_query(request, sort_field: str) -> str:
+    query = request.GET.copy()
+    query["sort"] = sort_field
+    query["dir"] = _toggle_sort_direction(
+        request.GET.get("sort", "").strip(),
+        request.GET.get("dir", "asc").strip(),
+        sort_field,
+    )
+    query.pop("page", None)
+    return query.urlencode()
+
+
+def _sort_indicator(current_sort: str, current_dir: str, field_name: str) -> str:
+    if current_sort != field_name:
+        return ""
+    return "↑" if current_dir == "asc" else "↓"
+
+
+def _filter_logs(
+    logs,
+    user_term: str = "",
+    email_term: str = "",
+    status_filter: str = "",
+    date_from: str = "",
+    date_to: str = "",
+):
+    filtered = logs
+    if user_term:
+        filtered = filtered.filter(usuario__username__icontains=user_term.strip())
+    if email_term:
+        filtered = filtered.filter(email__icontains=email_term.strip())
+    if status_filter:
+        filtered = filtered.filter(status=status_filter)
+    if date_from:
+        filtered = filtered.filter(criado_em__date__gte=date_from)
+    if date_to:
+        filtered = filtered.filter(criado_em__date__lte=date_to)
+    return filtered
+
+
+def _sort_logs(logs, sort_field: str = "created", direction: str = "desc"):
+    field_map = {
+        "user": "usuario__username",
+        "email": "email",
+        "action": "acao",
+        "status": "status",
+        "created": "criado_em",
+    }
+    resolved_field = field_map.get(sort_field, "criado_em")
+    if direction == "desc":
+        resolved_field = f"-{resolved_field}"
+    return logs.order_by(resolved_field, "-id")
 
 
 def _paginate_items(request, items, per_page: int, *, page_param: str = "page"):
@@ -231,6 +327,20 @@ def _filter_email_items(items, search_term: str = "", status_filter: str = ""):
     return filtered
 
 
+def _sort_email_items(items, sort_field: str = "email", direction: str = "asc"):
+    reverse = direction == "desc"
+    if sort_field == "status":
+        return sorted(
+            items,
+            key=lambda item: (
+                item["is_suspended"],
+                item["full_email"].lower(),
+            ),
+            reverse=reverse,
+        )
+    return sorted(items, key=lambda item: item["full_email"].lower(), reverse=reverse)
+
+
 def _resolve_account_context(request, account_user: str | None = None):
     root_client = CpanelClient()
     accounts = _cache_get_or_set(
@@ -298,6 +408,12 @@ def _render_email_list_page(request, account, *, create_form=None, open_create_m
     domain = settings.CPANEL_DOMAIN
     search_term = request.GET.get("q", "").strip()
     status_filter = request.GET.get("status", "").strip()
+    sort_field = request.GET.get("sort", "email").strip()
+    sort_direction = request.GET.get("dir", "asc").strip()
+    if sort_field not in {"email", "status"}:
+        sort_field = "email"
+    if sort_direction not in {"asc", "desc"}:
+        sort_direction = "asc"
 
     try:
         client, accounts, selected_account = _resolve_account_context(request, account_user=account)
@@ -307,6 +423,7 @@ def _render_email_list_page(request, account, *, create_form=None, open_create_m
             for item in _fetch_cpanel_emails(selected_account["user"], domain)
         ]
         emails = _filter_email_items(emails, search_term=search_term, status_filter=status_filter)
+        emails = _sort_email_items(emails, sort_field=sort_field, direction=sort_direction)
     except Exception as exc:
         logger.exception("Erro ao listar e-mails")
         error_message = _friendly_error(exc)
@@ -324,6 +441,12 @@ def _render_email_list_page(request, account, *, create_form=None, open_create_m
         "error_message": error_message,
         "search_term": search_term,
         "status_filter": status_filter,
+        "sort_field": sort_field,
+        "sort_direction": sort_direction,
+        "email_sort_query": _build_sort_query(request, "email"),
+        "status_sort_query": _build_sort_query(request, "status"),
+        "email_sort_indicator": _sort_indicator(sort_field, sort_direction, "email"),
+        "status_sort_indicator": _sort_indicator(sort_field, sort_direction, "status"),
         "filtered_total": len(emails),
         "create_form": create_form or EmailCreateForm(),
         "open_create_modal": open_create_modal or request.GET.get("open_create") == "1",
@@ -358,15 +481,36 @@ def _filter_google_users(items, search_term: str = "", status_filter: str = ""):
     return filtered
 
 
+def _sort_google_users(items, sort_field: str = "email", direction: str = "asc"):
+    reverse = direction == "desc"
+    if sort_field == "status":
+        return sorted(
+            items,
+            key=lambda item: (
+                item.suspended,
+                item.primary_email.lower(),
+            ),
+            reverse=reverse,
+        )
+    return sorted(items, key=lambda item: item.primary_email.lower(), reverse=reverse)
+
+
 def _render_google_user_list_page(request, *, create_form=None, open_create_modal: bool = False):
     users = []
     error_message = None
     search_term = request.GET.get("q", "").strip()
     status_filter = request.GET.get("status", "").strip()
+    sort_field = request.GET.get("sort", "email").strip()
+    sort_direction = request.GET.get("dir", "asc").strip()
+    if sort_field not in {"email", "status"}:
+        sort_field = "email"
+    if sort_direction not in {"asc", "desc"}:
+        sort_direction = "asc"
 
     try:
         users = _fetch_google_users()
         users = _filter_google_users(users, search_term=search_term, status_filter=status_filter)
+        users = _sort_google_users(users, sort_field=sort_field, direction=sort_direction)
     except Exception as exc:
         logger.exception("Erro ao listar usuarios Google Workspace")
         error_message = _friendly_error(exc)
@@ -381,6 +525,12 @@ def _render_google_user_list_page(request, *, create_form=None, open_create_moda
         "error_message": error_message,
         "search_term": search_term,
         "status_filter": status_filter,
+        "sort_field": sort_field,
+        "sort_direction": sort_direction,
+        "email_sort_query": _build_sort_query(request, "email"),
+        "status_sort_query": _build_sort_query(request, "status"),
+        "email_sort_indicator": _sort_indicator(sort_field, sort_direction, "email"),
+        "status_sort_indicator": _sort_indicator(sort_field, sort_direction, "status"),
         "filtered_total": len(users),
         "create_form": create_form or GoogleWorkspaceUserCreateForm(),
         "password_form": EmailPasswordChangeForm(),
@@ -693,6 +843,7 @@ def criar_usuario_google(request):
         first_name = form.cleaned_data["first_name"]
         last_name = form.cleaned_data["last_name"]
         senha = form.cleaned_data["senha"]
+        telefone = form.cleaned_data.get("telefone_completo")
         full_email = f"{nome}@{settings.GOOGLE_WORKSPACE_DOMAIN}"
         try:
             client = GoogleWorkspaceClient()
@@ -710,7 +861,34 @@ def criar_usuario_google(request):
         else:
             _invalidate_google_cache()
             _log_operation(request.user, full_email, "google criar usuario", "sucesso")
-            messages.success(request, f"Usuario Google {full_email} criado com sucesso.")
+            if telefone:
+                try:
+                    sms_client = CapitalMobileSMSClient()
+                    sms_text = sms_client.build_welcome_message(
+                        email=full_email,
+                        access_url=_email_access_url(settings.GOOGLE_WORKSPACE_DOMAIN),
+                        max_length=settings.CAPITAL_MOBILE_SMS_MAX_LENGTH,
+                    )
+                    sms_client.send_sms(telefone, sms_text)
+                except Exception as exc:
+                    detalhe = _friendly_error(exc)
+                    logger.exception("Erro ao enviar SMS de boas-vindas para usuario Google %s", full_email)
+                    _log_operation(request.user, full_email, "google sms boas-vindas", "erro", detalhe)
+                    messages.warning(
+                        request,
+                        f"Usuario Google {full_email} criado com sucesso, mas o SMS nao foi enviado. {detalhe}",
+                    )
+                else:
+                    _log_operation(
+                        request.user,
+                        full_email,
+                        "google sms boas-vindas",
+                        "sucesso",
+                        f"Telefone: {telefone}",
+                    )
+                    messages.success(request, f"Usuario Google {full_email} criado com sucesso e SMS enviado.")
+            else:
+                messages.success(request, f"Usuario Google {full_email} criado com sucesso.")
             return redirect("google-user-list")
 
     return _render_google_user_list_page(request, create_form=form, open_create_modal=True)
@@ -722,7 +900,7 @@ def acao_usuario_google(request, email):
     form = GoogleWorkspaceActionForm(request.POST)
     if not form.is_valid():
         messages.error(request, "Acao invalida.")
-        return redirect("google-user-list")
+        return redirect(_redirect_google_user_list_with_filters(request))
 
     action = form.cleaned_data["action"]
     can_manage_email_admin_actions = bool(
@@ -733,11 +911,11 @@ def acao_usuario_google(request, email):
             request,
             "Apenas usuarios com perfil de admin podem excluir contas de e-mail.",
         )
-        return redirect("email-list", account=account)
+        return redirect(_redirect_google_user_list_with_filters(request))
     password_form = EmailPasswordChangeForm(request.POST if action == "change_password" else None)
     if action == "change_password" and not password_form.is_valid():
         messages.error(request, "Informe uma nova senha valida com no minimo 8 caracteres.")
-        return redirect("google-user-list")
+        return redirect(_redirect_google_user_list_with_filters(request))
 
     try:
         client = GoogleWorkspaceClient()
@@ -746,20 +924,36 @@ def acao_usuario_google(request, email):
         logger.exception("Erro ao preparar acao Google '%s' para %s", action, email)
         _log_operation(request.user, email, f"google {action}", "erro", detalhe)
         messages.error(request, detalhe)
-        return redirect("google-user-list")
+        return redirect(_redirect_google_user_list_with_filters(request))
 
     action_map = {
-        "suspend_user": ("google suspender usuario", client.suspend_user, {"email": email}),
-        "unsuspend_user": ("google reativar usuario", client.unsuspend_user, {"email": email}),
-        "delete": ("google excluir usuario", client.delete_user, {"email": email}),
+        "suspend_user": (
+            "google suspender usuario",
+            client.suspend_user,
+            {"email": email},
+            f"Usuário Google {email} suspenso com sucesso.",
+        ),
+        "unsuspend_user": (
+            "google reativar usuario",
+            client.unsuspend_user,
+            {"email": email},
+            f"Usuário Google {email} reativado com sucesso.",
+        ),
+        "delete": (
+            "google excluir usuario",
+            client.delete_user,
+            {"email": email},
+            f"Usuário Google {email} excluído com sucesso.",
+        ),
     }
     if action == "change_password":
         action_map["change_password"] = (
             "google alterar senha",
             client.update_password,
             {"email": email, "password": password_form.cleaned_data["password"]},
+            f"Senha do usuário Google {email} alterada com sucesso.",
         )
-    label, handler, params = action_map[action]
+    label, handler, params, success_message = action_map[action]
 
     try:
         handler(**params)
@@ -771,8 +965,8 @@ def acao_usuario_google(request, email):
     else:
         _invalidate_google_cache()
         _log_operation(request.user, email, label, "sucesso")
-        messages.success(request, f"Acao '{label}' executada para {email}.")
-    return redirect("google-user-list")
+        messages.success(request, success_message)
+    return redirect(_redirect_google_user_list_with_filters(request))
 
 
 @require_GET
@@ -800,6 +994,7 @@ def criar_email(request, account):
         nome = form.cleaned_data["nome"]
         senha = form.cleaned_data["senha"]
         quota = form.cleaned_data["quota"]
+        telefone = form.cleaned_data.get("telefone_completo")
         full_email = f"{nome}@{domain}"
         try:
             client.create_email(email=nome, password=senha, quota=quota, domain=domain)
@@ -811,7 +1006,28 @@ def criar_email(request, account):
         else:
             _invalidate_cpanel_account_cache(selected_account["user"], domain)
             _log_operation(request.user, full_email, "criado", "sucesso", f"Quota: {quota} MB")
-            messages.success(request, f"E-mail {full_email} criado com sucesso.")
+            if telefone:
+                try:
+                    sms_client = CapitalMobileSMSClient()
+                    sms_text = sms_client.build_welcome_message(
+                        email=full_email,
+                        access_url=_email_access_url(domain),
+                        max_length=settings.CAPITAL_MOBILE_SMS_MAX_LENGTH,
+                    )
+                    sms_client.send_sms(telefone, sms_text)
+                except Exception as exc:
+                    detalhe = _friendly_error(exc)
+                    logger.exception("Erro ao enviar SMS de boas-vindas para %s", full_email)
+                    _log_operation(request.user, full_email, "sms boas-vindas", "erro", detalhe)
+                    messages.warning(
+                        request,
+                        f"E-mail {full_email} criado com sucesso, mas o SMS nao foi enviado. {detalhe}",
+                    )
+                else:
+                    _log_operation(request.user, full_email, "sms boas-vindas", "sucesso", f"Telefone: {telefone}")
+                    messages.success(request, f"E-mail {full_email} criado com sucesso e SMS enviado.")
+            else:
+                messages.success(request, f"E-mail {full_email} criado com sucesso.")
             return redirect("email-list", account=selected_account["user"])
     return _render_email_list_page(request, account, create_form=form, open_create_modal=True)
 
@@ -823,21 +1039,21 @@ def acao_email(request, account, email):
     full_email = email
     if not form.is_valid():
         messages.error(request, "Acao invalida.")
-        return redirect("email-list", account=account)
+        return redirect(_redirect_email_list_with_filters(account, request))
 
     action = form.cleaned_data["action"]
     domain = request.POST.get("domain") or request.session.get("selected_cpanel_domain") or settings.CPANEL_DOMAIN
     account = request.POST.get("account") or request.session.get("selected_cpanel_user") or account
     if not domain:
         messages.error(request, "Dominio nao informado.")
-        return redirect("email-list", account=account)
+        return redirect(_redirect_email_list_with_filters(account, request))
     if "@" not in full_email:
         full_email = f"{full_email}@{domain}"
 
     password_form = EmailPasswordChangeForm(request.POST if action == "change_password" else None)
     if action == "change_password" and not password_form.is_valid():
         messages.error(request, "Informe uma nova senha valida com no minimo 8 caracteres.")
-        return redirect("email-list", account=account)
+        return redirect(_redirect_email_list_with_filters(account, request))
 
     try:
         client = CpanelClient(cpanel_user=account, domain=domain)
@@ -846,20 +1062,36 @@ def acao_email(request, account, email):
         logger.exception("Erro ao preparar acao '%s' para %s", action, full_email)
         _log_operation(request.user, full_email, action, "erro", detalhe)
         messages.error(request, detalhe)
-        return redirect("email-list", account=account)
+        return redirect(_redirect_email_list_with_filters(account, request))
 
     action_map = {
-        "suspend_user": ("suspender usuario", client.suspend_user, {"full_email": full_email}),
-        "unsuspend_user": ("reativar usuario", client.unsuspend_user, {"full_email": full_email}),
-        "delete": ("excluir", client.delete_email, {"email": full_email.split("@")[0], "domain": domain}),
+        "suspend_user": (
+            "suspender usuario",
+            client.suspend_user,
+            {"full_email": full_email},
+            f"Usuário {full_email} suspenso com sucesso.",
+        ),
+        "unsuspend_user": (
+            "reativar usuario",
+            client.unsuspend_user,
+            {"full_email": full_email},
+            f"Usuário {full_email} reativado com sucesso.",
+        ),
+        "delete": (
+            "excluir",
+            client.delete_email,
+            {"email": full_email.split("@")[0], "domain": domain},
+            f"Conta {full_email} excluída com sucesso.",
+        ),
     }
     if action == "change_password":
         action_map["change_password"] = (
             "alterar senha",
             client.change_password,
             {"email": full_email.split("@")[0], "domain": domain, "password": password_form.cleaned_data["password"]},
+            f"Senha de {full_email} alterada com sucesso.",
         )
-    label, handler, params = action_map[action]
+    label, handler, params, success_message = action_map[action]
 
     try:
         handler(**params)
@@ -871,19 +1103,63 @@ def acao_email(request, account, email):
     else:
         _invalidate_cpanel_account_cache(account, domain)
         _log_operation(request.user, full_email, label, "sucesso")
-        messages.success(request, f"Acao '{label}' executada para {full_email}.")
-    return redirect("email-list", account=account)
+        messages.success(request, success_message)
+    return redirect(_redirect_email_list_with_filters(account, request))
 
 
 @require_GET
 @admin_required
 def historico(request):
     logs = EmailLog.objects.select_related("usuario").all()
+    user_term = request.GET.get("user", "").strip()
+    email_term = request.GET.get("email", "").strip()
+    status_filter = request.GET.get("status", "").strip()
+    date_from = request.GET.get("date_from", "").strip()
+    date_to = request.GET.get("date_to", "").strip()
+    sort_field = request.GET.get("sort", "created").strip()
+    sort_direction = request.GET.get("dir", "desc").strip()
+    if sort_field not in {"user", "email", "action", "status", "created"}:
+        sort_field = "created"
+    if sort_direction not in {"asc", "desc"}:
+        sort_direction = "desc"
+    available_users = User.objects.filter(email_logs__isnull=False).order_by("username").distinct()
+    logs = _filter_logs(
+        logs,
+        user_term=user_term,
+        email_term=email_term,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    logs = _sort_logs(logs, sort_field=sort_field, direction=sort_direction)
     page_obj, page_query = _paginate_items(request, logs, HISTORY_PER_PAGE)
     return render(
         request,
         "emails/detail.html",
-        {"logs": page_obj.object_list, "page_obj": page_obj, "page_query": page_query},
+        {
+            "logs": page_obj.object_list,
+            "page_obj": page_obj,
+            "page_query": page_query,
+            "user_term": user_term,
+            "available_users": available_users,
+            "email_term": email_term,
+            "status_filter": status_filter,
+            "date_from": date_from,
+            "date_to": date_to,
+            "sort_field": sort_field,
+            "sort_direction": sort_direction,
+            "user_sort_query": _build_sort_query(request, "user"),
+            "email_sort_query": _build_sort_query(request, "email"),
+            "action_sort_query": _build_sort_query(request, "action"),
+            "status_sort_query": _build_sort_query(request, "status"),
+            "created_sort_query": _build_sort_query(request, "created"),
+            "user_sort_indicator": _sort_indicator(sort_field, sort_direction, "user"),
+            "email_sort_indicator": _sort_indicator(sort_field, sort_direction, "email"),
+            "action_sort_indicator": _sort_indicator(sort_field, sort_direction, "action"),
+            "status_sort_indicator": _sort_indicator(sort_field, sort_direction, "status"),
+            "created_sort_indicator": _sort_indicator(sort_field, sort_direction, "created"),
+            "filtered_total": logs.count(),
+        },
     )
 
 

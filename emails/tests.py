@@ -5,6 +5,7 @@ from django.core import mail
 from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from .forms import EmailCreateForm, SystemUserForm
 from .models import EmailLog, WorkspaceSetting
@@ -13,6 +14,7 @@ from .services.google_workspace_client import (
     GoogleWorkspaceClient,
     GoogleWorkspaceUser,
 )
+from .services.sms_client import CapitalMobileSMSClient
 
 
 class EmailCreateFormTests(TestCase):
@@ -20,6 +22,42 @@ class EmailCreateFormTests(TestCase):
         form = EmailCreateForm(data={"nome": "teste@dominio.com", "senha": "12345678", "quota": 100})
         self.assertFalse(form.is_valid())
         self.assertIn("nome", form.errors)
+
+    def test_telefone_monta_msisdn_quando_ddd_e_numero_sao_informados(self):
+        form = EmailCreateForm(
+            data={
+                "nome": "teste",
+                "senha": "Senha123!",
+                "quota": 100,
+                "telefone_ddd": "(86)",
+                "telefone_numero": "9 0018-315",
+            }
+        )
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["telefone_completo"], "558690018315")
+
+    def test_telefone_exige_ddd_e_numero_juntos(self):
+        form = EmailCreateForm(
+            data={"nome": "teste", "senha": "Senha123!", "quota": 100, "telefone_ddd": "86"}
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("telefone_numero", form.errors)
+
+    def test_google_form_monta_msisdn_quando_ddd_e_numero_sao_informados(self):
+        from .forms import GoogleWorkspaceUserCreateForm
+
+        form = GoogleWorkspaceUserCreateForm(
+            data={
+                "nome": "teste",
+                "first_name": "Teste",
+                "last_name": "Usuario",
+                "senha": "Senha123!",
+                "telefone_ddd": "(86)",
+                "telefone_numero": "9 0018-315",
+            }
+        )
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["telefone_completo"], "558690018315")
 
     def test_admin_comum_nao_ve_opcao_admin_do_sistema_no_formulario(self):
         admin = User.objects.create_user(username="admin_form", password="Senha123!")
@@ -95,6 +133,28 @@ class EmailViewsTests(TestCase):
         self.assertNotContains(response, "financeiro@cnxtel.com.br")
 
     @patch("emails.views.CpanelClient")
+    def test_lista_ordena_por_status(self, client_cls):
+        self.client.force_login(self.user)
+        root_client = client_cls.return_value
+        managed_client = client_cls.return_value
+        root_client.list_accounts.return_value = [
+            {"user": "admcnxtelco", "domain": "cnxtel.com.br", "label": "admcnxtelco - cnxtel.com.br"}
+        ]
+        managed_client.list_emails.return_value = [
+            {"email": "ativo@cnxtel.com.br", "suspended_login": 0, "suspended_incoming": 0, "suspended_outgoing": 0},
+            {"email": "suspenso@cnxtel.com.br", "suspended_login": 1, "suspended_incoming": 0, "suspended_outgoing": 0},
+        ]
+
+        response = self.client.get(
+            reverse("email-list", args=["admcnxtelco"]),
+            {"sort": "status", "dir": "desc"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertLess(content.index("suspenso@cnxtel.com.br"), content.index("ativo@cnxtel.com.br"))
+
+    @patch("emails.views.CpanelClient")
     def test_url_da_conta_prioriza_usuario_mesmo_com_sessao_antiga(self, client_cls):
         self.client.force_login(self.user)
         root_client = client_cls.return_value
@@ -123,6 +183,77 @@ class EmailViewsTests(TestCase):
         self.assertEqual(response.status_code, 302)
         client_cls.return_value.change_password.assert_called_once_with(email="contato", domain="cnxtel.com.br", password="Senha1234")
 
+    @patch("emails.views.CapitalMobileSMSClient")
+    @patch("emails.views.CpanelClient")
+    def test_criar_email_envia_sms_quando_telefone_for_informado(self, client_cls, sms_client_cls):
+        self.client.force_login(self.user)
+        root_client = client_cls.return_value
+        managed_client = client_cls.return_value
+        root_client.list_accounts.return_value = [
+            {"user": "admcnxtelco", "domain": "cnxtel.com.br", "label": "admcnxtelco - cnxtel.com.br"}
+        ]
+        managed_client.create_email.return_value = {"status": 1}
+        sms_client_cls.return_value.build_welcome_message.return_value = "mensagem sms"
+
+        response = self.client.post(
+            reverse("email-create", args=["admcnxtelco"]),
+            {
+                "account": "admcnxtelco",
+                "domain": "cnxtel.com.br",
+                "nome": "novo",
+                "senha": "Senha123!",
+                "quota": 1024,
+                "telefone_ddd": "86",
+                "telefone_numero": "90018315",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        managed_client.create_email.assert_called_once_with(
+            email="novo", password="Senha123!", quota=1024, domain="cnxtel.com.br"
+        )
+        sms_client_cls.return_value.build_welcome_message.assert_called_once_with(
+            email="novo@cnxtel.com.br",
+            access_url="https://webmail.cnxtel.com.br",
+            max_length=160,
+        )
+        sms_client_cls.return_value.send_sms.assert_called_once_with("558690018315", "mensagem sms")
+
+    @patch("emails.views.CapitalMobileSMSClient")
+    @patch("emails.views.CpanelClient")
+    def test_criar_email_mantem_sucesso_quando_sms_falha(self, client_cls, sms_client_cls):
+        self.client.force_login(self.user)
+        root_client = client_cls.return_value
+        managed_client = client_cls.return_value
+        root_client.list_accounts.return_value = [
+            {"user": "admcnxtelco", "domain": "cnxtel.com.br", "label": "admcnxtelco - cnxtel.com.br"}
+        ]
+        managed_client.create_email.return_value = {"status": 1}
+        sms_client_cls.return_value.send_sms.side_effect = Exception("falhou")
+
+        response = self.client.post(
+            reverse("email-create", args=["admcnxtelco"]),
+            {
+                "account": "admcnxtelco",
+                "domain": "cnxtel.com.br",
+                "nome": "novo",
+                "senha": "Senha123!",
+                "quota": 1024,
+                "telefone_ddd": "86",
+                "telefone_numero": "90018315",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "E-mail novo@cnxtel.com.br criado com sucesso, mas o SMS nao foi enviado.")
+
+    @override_settings(GOOGLE_WORKSPACE_DOMAIN="oratelecom.com.br")
+    def test_sms_helper_usa_link_do_gmail_para_dominio_google(self):
+        from .views import _email_access_url
+
+        self.assertEqual(_email_access_url("oratelecom.com.br"), "https://mail.google.com/")
+
     @patch("emails.views.CpanelClient")
     def test_suspender_login_nao_acessa_cleaned_data_de_senha(self, client_cls):
         self.client.force_login(self.user)
@@ -133,6 +264,29 @@ class EmailViewsTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         client_cls.return_value.suspend_user.assert_called_once_with(full_email="contato@cnxtel.com.br")
+
+    @patch("emails.views.CpanelClient")
+    def test_acao_email_preserva_filtros_no_redirect(self, client_cls):
+        self.client.force_login(self.user)
+        client_cls.return_value.suspend_user.return_value = {"status": 1}
+
+        response = self.client.post(
+            reverse("email-action", args=["admcnxtelco", "contato@cnxtel.com.br"]),
+            {
+                "account": "admcnxtelco",
+                "domain": "cnxtel.com.br",
+                "action": "suspend_user",
+                "q": "emailteste",
+                "status": "active",
+                "page": "2",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response.url,
+            f"{reverse('email-list', args=['admcnxtelco'])}?q=emailteste&status=active&page=2",
+        )
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_password_reset_envia_email_para_usuario_interno(self):
@@ -211,6 +365,38 @@ class CpanelCompositeActionTests(TestCase):
         response = self.client.get(reverse("email-log"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "admin")
+        self.assertContains(response, '<select id="user" name="user" class="form-select">', html=False)
+
+    def test_logs_filtram_por_usuario_email_status_e_periodo(self):
+        EmailLog.objects.create(usuario=self.admin, email="ativo@cnxtel.com.br", acao="criado", status="sucesso")
+        EmailLog.objects.create(usuario=self.admin, email="erro@cnxtel.com.br", acao="suspender usuario", status="erro")
+        self.client.force_login(self.admin)
+
+        response = self.client.get(
+            reverse("email-log"),
+            {
+                "user": "admin",
+                "email": "erro@cnxtel.com.br",
+                "status": "erro",
+                "date_from": timezone.localdate().isoformat(),
+                "date_to": timezone.localdate().isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "erro@cnxtel.com.br")
+        self.assertNotContains(response, "ativo@cnxtel.com.br")
+
+    def test_logs_ordenam_por_email(self):
+        EmailLog.objects.create(usuario=self.admin, email="zeta@cnxtel.com.br", acao="criado", status="sucesso")
+        EmailLog.objects.create(usuario=self.admin, email="alfa@cnxtel.com.br", acao="criado", status="sucesso")
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("email-log"), {"sort": "email", "dir": "asc"})
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertLess(content.index("alfa@cnxtel.com.br"), content.index("zeta@cnxtel.com.br"))
 
     def test_configuracao_workspace_exige_admin(self):
         self.client.force_login(self.user)
@@ -276,6 +462,17 @@ class CpanelCompositeActionTests(TestCase):
         self.assertEqual(WorkspaceSetting.get_solo().google_workspace_user_limit, 120)
         self.assertEqual(WorkspaceSetting.get_solo().google_workspace_alert_email, "sistemas@oratelecom.com.br")
         self.assertTrue(EmailLog.objects.filter(acao="configurar workspace google", usuario=self.system_admin).exists())
+
+
+class SMSClientTests(TestCase):
+    def test_build_welcome_message_respeita_limite(self):
+        message = CapitalMobileSMSClient.build_welcome_message(
+            email="novo@cnxtel.com.br",
+            access_url="https://webmail.cnxtel.com.br",
+            max_length=160,
+        )
+        self.assertLessEqual(len(message), 160)
+        self.assertIn("novo@cnxtel.com.br", message)
 
 
 class CpanelClientTests(TestCase):
@@ -585,6 +782,40 @@ class GoogleWorkspaceViewsTests(TestCase):
         self.assertEqual(response.status_code, 302)
         client_cls.return_value.create_user.assert_called_once()
 
+    @patch("emails.views.CapitalMobileSMSClient")
+    @patch("emails.views.GoogleWorkspaceClient")
+    def test_google_cria_usuario_envia_sms_quando_telefone_for_informado(self, client_cls, sms_client_cls):
+        self.client.force_login(self.user)
+        client_cls.return_value.create_user.return_value = GoogleWorkspaceUser(
+            primary_email="novo@oratelecom.com.br",
+            full_name="Novo Usuario",
+            suspended=False,
+            org_unit_path="/",
+            is_admin=False,
+            aliases=[],
+        )
+        sms_client_cls.return_value.build_welcome_message.return_value = "mensagem sms"
+
+        response = self.client.post(
+            reverse("google-user-create"),
+            {
+                "nome": "novo",
+                "first_name": "Novo",
+                "last_name": "Usuario",
+                "senha": "Senha123!",
+                "telefone_ddd": "86",
+                "telefone_numero": "90018315",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        sms_client_cls.return_value.build_welcome_message.assert_called_once_with(
+            email="novo@oratelecom.com.br",
+            access_url="https://mail.google.com/",
+            max_length=160,
+        )
+        sms_client_cls.return_value.send_sms.assert_called_once_with("558690018315", "mensagem sms")
+
     @patch("emails.views.GoogleWorkspaceClient")
     def test_google_suspende_usuario(self, client_cls):
         self.client.force_login(self.user)
@@ -604,3 +835,34 @@ class GoogleWorkspaceViewsTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         client_cls.return_value.suspend_user.assert_called_once_with(email="novo@oratelecom.com.br")
+
+    @patch("emails.views.GoogleWorkspaceClient")
+    def test_google_lista_ordena_por_status(self, client_cls):
+        self.client.force_login(self.user)
+        client_cls.return_value.list_users.return_value = [
+            GoogleWorkspaceUser(
+                primary_email="ativo@oratelecom.com.br",
+                full_name="Ativo",
+                suspended=False,
+                org_unit_path="/",
+                is_admin=False,
+                aliases=[],
+            ),
+            GoogleWorkspaceUser(
+                primary_email="suspenso@oratelecom.com.br",
+                full_name="Suspenso",
+                suspended=True,
+                org_unit_path="/",
+                is_admin=False,
+                aliases=[],
+            ),
+        ]
+
+        response = self.client.get(
+            reverse("google-user-list"),
+            {"sort": "status", "dir": "desc"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertLess(content.index("suspenso@oratelecom.com.br"), content.index("ativo@oratelecom.com.br"))

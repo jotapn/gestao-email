@@ -12,7 +12,38 @@ from .models import WorkspaceSetting
 PASSWORD_RULES_HELP = "Minimo de 8 caracteres, letra maiuscula, minuscula, numero e caractere especial."
 
 
-class EmailCreateForm(forms.Form):
+class SMSPhoneFieldsMixin:
+    def clean_sms_phone_fields(self):
+        cleaned_data = super().clean()
+        ddd = "".join(filter(str.isdigit, cleaned_data.get("telefone_ddd", "")))
+        numero = "".join(filter(str.isdigit, cleaned_data.get("telefone_numero", "")))
+
+        cleaned_data["telefone_ddd"] = ddd
+        cleaned_data["telefone_numero"] = numero
+
+        if not ddd and not numero:
+            return cleaned_data
+
+        if not ddd or not numero:
+            message = "Informe DDD e numero para enviar o SMS."
+            if not ddd:
+                self.add_error("telefone_ddd", message)
+            if not numero:
+                self.add_error("telefone_numero", message)
+            return cleaned_data
+
+        if len(ddd) != 2:
+            self.add_error("telefone_ddd", "Informe um DDD valido com 2 digitos.")
+
+        if len(numero) not in {8, 9}:
+            self.add_error("telefone_numero", "Informe um numero valido com 8 ou 9 digitos.")
+
+        if not self.errors:
+            cleaned_data["telefone_completo"] = f"55{ddd}{numero}"
+        return cleaned_data
+
+
+class EmailCreateForm(SMSPhoneFieldsMixin, forms.Form):
     nome = forms.CharField(
         max_length=50,
         label="Nome",
@@ -31,12 +62,41 @@ class EmailCreateForm(forms.Form):
         help_text="Use 0 para ilimitado.",
         widget=forms.NumberInput(attrs={"class": "form-control"}),
     )
+    telefone_ddd = forms.CharField(
+        max_length=4,
+        required=False,
+        label="DDD",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "86",
+                "inputmode": "numeric",
+                "autocomplete": "tel-area-code",
+            }
+        ),
+    )
+    telefone_numero = forms.CharField(
+        max_length=20,
+        required=False,
+        label="Numero",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "99999-9999",
+                "inputmode": "numeric",
+                "autocomplete": "tel-local",
+            }
+        ),
+    )
 
     def clean_nome(self):
         nome = self.cleaned_data["nome"].strip().lower()
         if "@" in nome:
             raise forms.ValidationError("Informe apenas o nome antes do dominio.")
         return nome
+
+    def clean(self):
+        return self.clean_sms_phone_fields()
 
 
 class EmailActionForm(forms.Form):
@@ -246,7 +306,7 @@ class StyledPasswordChangeForm(PasswordChangeForm):
     )
 
 
-class GoogleWorkspaceUserCreateForm(forms.Form):
+class GoogleWorkspaceUserCreateForm(SMSPhoneFieldsMixin, forms.Form):
     nome = forms.CharField(
         max_length=50,
         label="Nome do e-mail",
@@ -269,12 +329,41 @@ class GoogleWorkspaceUserCreateForm(forms.Form):
         label="Senha",
         help_text=PASSWORD_RULES_HELP,
     )
+    telefone_ddd = forms.CharField(
+        max_length=4,
+        required=False,
+        label="DDD",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "86",
+                "inputmode": "numeric",
+                "autocomplete": "tel-area-code",
+            }
+        ),
+    )
+    telefone_numero = forms.CharField(
+        max_length=20,
+        required=False,
+        label="Numero",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "99999-9999",
+                "inputmode": "numeric",
+                "autocomplete": "tel-local",
+            }
+        ),
+    )
 
     def clean_nome(self):
         nome = self.cleaned_data["nome"].strip().lower()
         if "@" in nome:
             raise forms.ValidationError("Informe apenas o nome antes do dominio.")
         return nome
+
+    def clean(self):
+        return self.clean_sms_phone_fields()
 
 
 class GoogleWorkspaceActionForm(forms.Form):

@@ -42,6 +42,9 @@
             <div class="col-lg-2 d-grid">
                 <button type="submit" class="btn btn-outline-primary">Aplicar</button>
             </div>
+            <div class="col-lg-2 d-grid">
+                <a href="{% url 'email-list' selected_account.user %}" class="btn btn-outline-secondary">Limpar</a>
+            </div>
         </form>
         <div class="mt-3 text-muted small">
             {{ filtered_total }} e-mail{{ filtered_total|pluralize }} encontrado{{ filtered_total|pluralize }}
@@ -135,6 +138,27 @@
                             <div class="text-danger small mt-1">{{ create_form.quota.errors|join:", " }}</div>
                         {% endif %}
                     </div>
+
+                    <div class="mb-3">
+                        <label class="form-label mb-1">Telefone para SMS</label>
+                        <div class="row g-2">
+                            <div class="col-4">
+                                <label for="{{ create_form.telefone_ddd.id_for_label }}" class="form-label small text-muted">{{ create_form.telefone_ddd.label }}</label>
+                                {{ create_form.telefone_ddd }}
+                                {% if create_form.telefone_ddd.errors %}
+                                    <div class="text-danger small mt-1">{{ create_form.telefone_ddd.errors|join:", " }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-8">
+                                <label for="{{ create_form.telefone_numero.id_for_label }}" class="form-label small text-muted">{{ create_form.telefone_numero.label }}</label>
+                                {{ create_form.telefone_numero }}
+                                {% if create_form.telefone_numero.errors %}
+                                    <div class="text-danger small mt-1">{{ create_form.telefone_numero.errors|join:", " }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="form-text">Opcional. Se informado, o sistema envia um SMS de boas-vindas com o e-mail criado e o link de acesso.</div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
@@ -151,9 +175,9 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>E-mail</th>
+                        <th><a class="link-dark text-decoration-none" href="?{{ email_sort_query }}">E-mail {% if email_sort_indicator %}<span aria-hidden="true">{{ email_sort_indicator }}</span>{% endif %}</a></th>
                         <th>Quota usada / total</th>
-                        <th>Status</th>
+                        <th><a class="link-dark text-decoration-none" href="?{{ status_sort_query }}">Status {% if status_sort_indicator %}<span aria-hidden="true">{{ status_sort_indicator }}</span>{% endif %}</a></th>
                         <th class="text-end">Ações</th>
                     </tr>
                 </thead>
@@ -171,18 +195,25 @@
                             </td>
                             <td class="text-end">
                                 <div class="d-flex flex-wrap justify-content-end gap-2">
-                                    <form method="post" action="{% url 'email-action' selected_account.user item.full_email %}">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="account" value="{{ selected_account.user|default:'' }}">
-                                        <input type="hidden" name="domain" value="{{ domain }}">
                                         {% if item.login_suspended or item.outgoing_suspended or item.incoming_suspended %}
-                                            <input type="hidden" name="action" value="unsuspend_user">
-                                            <button type="submit" class="btn btn-sm btn-outline-success">Reativar usuário</button>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-success"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#toggleStatusModal{{ forloop.counter }}"
+                                            >
+                                                Reativar usuário
+                                            </button>
                                         {% else %}
-                                            <input type="hidden" name="action" value="suspend_user">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">Suspender usuário</button>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-danger"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#toggleStatusModal{{ forloop.counter }}"
+                                            >
+                                                Suspender usuário
+                                            </button>
                                         {% endif %}
-                                    </form>
                                     <button
                                         type="button"
                                         class="btn btn-sm btn-outline-primary"
@@ -203,6 +234,48 @@
                                     {% endif %}
                                 </div>
 
+                                <div class="modal fade" id="toggleStatusModal{{ forloop.counter }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                {% if item.login_suspended or item.outgoing_suspended or item.incoming_suspended %}
+                                                    <h2 class="modal-title fs-5">Confirmar reativação</h2>
+                                                {% else %}
+                                                    <h2 class="modal-title fs-5">Confirmar suspensão</h2>
+                                                {% endif %}
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                            </div>
+                                            <div class="modal-body text-start">
+                                                {% if item.login_suspended or item.outgoing_suspended or item.incoming_suspended %}
+                                                    Deseja realmente reativar <strong>{{ item.full_email }}</strong>?
+                                                {% else %}
+                                                    Deseja realmente suspender <strong>{{ item.full_email }}</strong>?
+                                                {% endif %}
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                                                <form method="post" action="{% url 'email-action' selected_account.user item.full_email %}">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="account" value="{{ selected_account.user|default:'' }}">
+                                                    <input type="hidden" name="domain" value="{{ domain }}">
+                                                    <input type="hidden" name="q" value="{{ search_term }}">
+                                                    <input type="hidden" name="status" value="{{ status_filter }}">
+                                                    <input type="hidden" name="page" value="{{ page_obj.number }}">
+                                                    <input type="hidden" name="sort" value="{{ sort_field }}">
+                                                    <input type="hidden" name="dir" value="{{ sort_direction }}">
+                                                    {% if item.login_suspended or item.outgoing_suspended or item.incoming_suspended %}
+                                                        <input type="hidden" name="action" value="unsuspend_user">
+                                                        <button type="submit" class="btn btn-success">Reativar</button>
+                                                    {% else %}
+                                                        <input type="hidden" name="action" value="suspend_user">
+                                                        <button type="submit" class="btn btn-danger">Suspender</button>
+                                                    {% endif %}
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {% if request.user.profile.can_manage_admin %}
                                     <div class="modal fade" id="deleteModal{{ forloop.counter }}" tabindex="-1" aria-hidden="true">
                                         <div class="modal-dialog">
@@ -220,6 +293,11 @@
                                                         {% csrf_token %}
                                                         <input type="hidden" name="account" value="{{ selected_account.user|default:'' }}">
                                                         <input type="hidden" name="domain" value="{{ domain }}">
+                                                        <input type="hidden" name="q" value="{{ search_term }}">
+                                                        <input type="hidden" name="status" value="{{ status_filter }}">
+                                                        <input type="hidden" name="page" value="{{ page_obj.number }}">
+                                                        <input type="hidden" name="sort" value="{{ sort_field }}">
+                                                        <input type="hidden" name="dir" value="{{ sort_direction }}">
                                                         <input type="hidden" name="action" value="delete">
                                                         <button type="submit" class="btn btn-danger">Excluir</button>
                                                     </form>
@@ -242,6 +320,11 @@
                                                     <p class="mb-3">Defina a nova senha para <strong>{{ item.full_email }}</strong>.</p>
                                                     <input type="hidden" name="account" value="{{ selected_account.user|default:'' }}">
                                                     <input type="hidden" name="domain" value="{{ domain }}">
+                                                    <input type="hidden" name="q" value="{{ search_term }}">
+                                                    <input type="hidden" name="status" value="{{ status_filter }}">
+                                                    <input type="hidden" name="page" value="{{ page_obj.number }}">
+                                                    <input type="hidden" name="sort" value="{{ sort_field }}">
+                                                    <input type="hidden" name="dir" value="{{ sort_direction }}">
                                                     <input type="hidden" name="action" value="change_password">
                                                     <label for="password{{ forloop.counter }}" class="form-label">Nova senha</label>
                                                     <div class="input-group">

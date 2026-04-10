@@ -128,6 +128,21 @@ CPANEL_DOMAIN=seudominio.com.br
 CPANEL_VERIFY_SSL=True
 ```
 
+### SMS de boas-vindas
+
+Ao criar uma conta de e-mail, a tela permite informar `DDD` e `numero`. Quando ambos sao preenchidos, o sistema envia um SMS de boas-vindas com o e-mail criado e o link de acesso.
+
+```env
+CAPITAL_MOBILE_SMS_ENDPOINT=https://portal.capitalmobile.com.br/post/index.php
+CAPITAL_MOBILE_SMS_USER=seu_usuario
+CAPITAL_MOBILE_SMS_PASSWORD=sua_senha
+CAPITAL_MOBILE_SMS_COOKIE=
+CAPITAL_MOBILE_SMS_MAX_LENGTH=160
+```
+
+- Para dominios cPanel, o link enviado no SMS usa `https://webmail.seu-dominio.com.br`.
+- Para o dominio configurado em `GOOGLE_WORKSPACE_DOMAIN`, o link enviado no SMS usa `https://mail.google.com/`.
+
 ### Envio de e-mails do sistema
 
 Usado para notificacoes, incluindo envio de credenciais de usuarios internos e alertas do Google Workspace.

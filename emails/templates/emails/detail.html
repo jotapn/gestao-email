@@ -10,17 +10,62 @@
     </div>
 </div>
 
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-lg-3">
+                <label for="user" class="form-label">Usuário</label>
+                <select id="user" name="user" class="form-select">
+                    <option value="" {% if not user_term %}selected{% endif %}>Todos</option>
+                    {% for item in available_users %}
+                        <option value="{{ item.username }}" {% if user_term == item.username %}selected{% endif %}>{{ item.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-lg-3">
+                <label for="email" class="form-label">E-mail</label>
+                <input type="text" id="email" name="email" value="{{ email_term }}" class="form-control" placeholder="ex: contato@dominio.com">
+            </div>
+            <div class="col-lg-2">
+                <label for="status" class="form-label">Status</label>
+                <select id="status" name="status" class="form-select">
+                    <option value="" {% if not status_filter %}selected{% endif %}>Todos</option>
+                    <option value="sucesso" {% if status_filter == "sucesso" %}selected{% endif %}>Sucesso</option>
+                    <option value="erro" {% if status_filter == "erro" %}selected{% endif %}>Erro</option>
+                </select>
+            </div>
+            <div class="col-lg-2">
+                <label for="date_from" class="form-label">De</label>
+                <input type="date" id="date_from" name="date_from" value="{{ date_from }}" class="form-control">
+            </div>
+            <div class="col-lg-2">
+                <label for="date_to" class="form-label">Até</label>
+                <input type="date" id="date_to" name="date_to" value="{{ date_to }}" class="form-control">
+            </div>
+            <div class="col-lg-1 d-grid">
+                <button type="submit" class="btn btn-outline-primary">Aplicar</button>
+            </div>
+            <div class="col-lg-1 d-grid">
+                <a href="{% url 'email-log' %}" class="btn btn-outline-secondary">Limpar</a>
+            </div>
+        </form>
+        <div class="mt-3 text-muted small">
+            {{ filtered_total }} registro{{ filtered_total|pluralize }} encontrado{{ filtered_total|pluralize }}
+        </div>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm">
     <div class="table-responsive">
         <table class="table table-striped align-middle mb-0">
             <thead class="table-light">
                 <tr>
-                    <th>Usuário</th>
-                    <th>E-mail</th>
-                    <th>Ação</th>
-                    <th>Status</th>
+                    <th><a class="link-dark text-decoration-none" href="?{{ user_sort_query }}">Usuário {% if user_sort_indicator %}<span aria-hidden="true">{{ user_sort_indicator }}</span>{% endif %}</a></th>
+                    <th><a class="link-dark text-decoration-none" href="?{{ email_sort_query }}">E-mail {% if email_sort_indicator %}<span aria-hidden="true">{{ email_sort_indicator }}</span>{% endif %}</a></th>
+                    <th><a class="link-dark text-decoration-none" href="?{{ action_sort_query }}">Ação {% if action_sort_indicator %}<span aria-hidden="true">{{ action_sort_indicator }}</span>{% endif %}</a></th>
+                    <th><a class="link-dark text-decoration-none" href="?{{ status_sort_query }}">Status {% if status_sort_indicator %}<span aria-hidden="true">{{ status_sort_indicator }}</span>{% endif %}</a></th>
                     <th>Detalhe</th>
-                    <th>Criado em</th>
+                    <th><a class="link-dark text-decoration-none" href="?{{ created_sort_query }}">Criado em {% if created_sort_indicator %}<span aria-hidden="true">{{ created_sort_indicator }}</span>{% endif %}</a></th>
                 </tr>
             </thead>
             <tbody>
